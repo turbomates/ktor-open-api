@@ -114,12 +114,12 @@ class OpenApiKType(val original: KType) {
 
     private fun KType.isPrimitive(): Boolean {
         return javaClass.isPrimitive ||
-                isSubtypeOf(typeOf<String?>()) ||
-                isSubtypeOf(typeOf<Int?>()) ||
-                isSubtypeOf(typeOf<Float?>()) ||
-                isSubtypeOf(typeOf<Double?>()) ||
-                isSubtypeOf(typeOf<Boolean?>()) ||
-                isSubtypeOf(typeOf<UUID?>())
+            isSubtypeOf(typeOf<String?>()) ||
+            isSubtypeOf(typeOf<Int?>()) ||
+            isSubtypeOf(typeOf<Float?>()) ||
+            isSubtypeOf(typeOf<Double?>()) ||
+            isSubtypeOf(typeOf<Boolean?>()) ||
+            isSubtypeOf(typeOf<UUID?>())
     }
 
     private fun KType.isCollection(): Boolean {
@@ -133,7 +133,6 @@ class OpenApiKType(val original: KType) {
     private fun KType.isEnum(): Boolean {
         return this.javaClass.isEnum || isSubtypeOf(typeOf<Enum<*>?>())
     }
-
 
     private val KType.openApiType: Type
         get() {

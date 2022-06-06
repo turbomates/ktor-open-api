@@ -4,7 +4,7 @@ enableFeaturePreview("VERSION_CATALOGS")
 dependencyResolutionManagement {
     versionCatalogs {
         create("deps") {
-            version("ktor", "2.0.1")
+            version("ktor", "2.0.2")
             version("detekt", "1.20.0")
             version("kotlin", "1.6.20")
             version("swagger_webjar", "4.1.3")

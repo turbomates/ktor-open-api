@@ -2,21 +2,15 @@ package com.turbomates.openapi.ktor
 
 import com.turbomates.openapi.OpenApiKType
 import com.turbomates.openapi.Type
-import com.turbomates.openapi.openApiKType
 import io.ktor.http.ContentType
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.Configuration
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.BaseApplicationPlugin
 import io.ktor.server.application.call
-import io.ktor.server.application.install
-import io.ktor.server.plugins.dataconversion.conversionService
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
-import io.ktor.server.webjars.Webjars
 import io.ktor.util.AttributeKey
-import kotlin.reflect.KType
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI

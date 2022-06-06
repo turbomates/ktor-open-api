@@ -10,7 +10,6 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.jvm.javaio.copyTo
 import java.io.ByteArrayOutputStream
 
-
 val SwaggerPath = createApplicationPlugin(name = "SwaggerPath") {
     onCallRespond { call ->
         transformBody { data ->
@@ -45,5 +44,3 @@ val SwaggerPath = createApplicationPlugin(name = "SwaggerPath") {
         }
     }
 }
-
-

@@ -31,23 +31,25 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
-          java-version: 17
+          distribution: 'temurin'
+          java-version: '17'
       - name: Set output
         id: vars
-        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+        run: |
+          echo ${GITHUB_REF_NAME:1} 
+          echo ::set-output name=version::${GITHUB_REF_NAME:1}
       - name: Build
         uses: gradle/gradle-build-action@v2
         with:
           arguments: build
       - name: Prepare to publish
         run: |
-            echo '${{secrets.ORG_GRADLE_PROJECT_SIGNING_PWD}}' | base64 -d > secret.kbx
-            echo "::set-env name=RELEASE_VERSION::${GITHUB_REF:11}"
+          echo '${{secrets.ORG_GRADLE_PROJECT_SIGNING_KEY}}' | base64 -d > secret.kbx
       - name: Deploy Snapshot
         uses: gradle/gradle-build-action@v2
         env:
           ORG_GRADLE_PROJECT_SONATYPE_USERNAME: ${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_USERNAME }}
           ORG_GRADLE_PROJECT_SONATYPE_PASSWORD: ${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_PASSWORD }}
-          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.vars.outputs.version }}
         with:
-          arguments: publish -Psigning.secretKeyRingFile=secret.kbx -Psigning.keyId=${{ secrets.ORG_GRADLE_PROJECT_SIGNING_KEY }} -Psigning.password=${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_PASSWORD }} -PossrhUsername=${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_USERNAME }} -PossrhPassword=${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_PASSWORD }}
+          arguments: publish -Psigning.secretKeyRingFile=secret.kbx -Psigning.keyId=${{ secrets.ORG_GRADLE_PROJECT_SIGNING_KEY_ID }} -Psigning.password=${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_PASSWORD }} -PossrhUsername=${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_USERNAME }} -PossrhPassword=${{ secrets.ORG_GRADLE_PROJECT_SONATYPE_PASSWORD }}

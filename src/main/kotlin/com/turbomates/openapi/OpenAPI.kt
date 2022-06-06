@@ -10,8 +10,8 @@ import com.turbomates.openapi.spec.RequestBodyObject
 import com.turbomates.openapi.spec.ResponseObject
 import com.turbomates.openapi.spec.Root
 import com.turbomates.openapi.spec.SchemaObject
-import kotlin.reflect.KClass
 import kotlinx.serialization.json.JsonElement
+import kotlin.reflect.KClass
 
 class OpenAPI(var host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
@@ -88,6 +88,7 @@ class OpenAPI(var host: String) {
         )
     }
 
+    @Suppress("FunctionParameterNaming", "UnusedPrivateMember")
     private fun Type.Object.toParameterObject(`in`: INType): List<ParameterObject> {
         return properties.map {
             ParameterObject(it.name, schema = it.type.toSchemaObject(), required = it.type.required, `in` = `in`.value)

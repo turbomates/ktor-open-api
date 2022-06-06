@@ -26,6 +26,7 @@ dependencies {
     implementation(deps.kotlin.serialization.json)
     implementation(deps.kotlin.reflect)
     implementation(deps.swagger.webjar)
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:${deps.versions.detekt.get()}")
     testImplementation(deps.ktor.test)
     testImplementation(deps.openapi.validator)
 }
@@ -47,6 +48,7 @@ detekt {
 }
 
 tasks.withType<Detekt>().configureEach {
+    autoCorrect = true
     reports {
         html.required.set(true) // observe findings in your browser with structure and code snippets
         xml.required.set(true) // checkstyle like format mainly for integrations like Jenkins
