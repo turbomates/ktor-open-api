@@ -10,7 +10,7 @@ plugins {
     signing
 }
 
-group = "com.turbomates.openapi"
+group = "com.turbomates.ktor.openapi"
 version = System.getenv("RELEASE_VERSION") ?: "0.0.1"
 
 repositories {
@@ -64,7 +64,7 @@ publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             artifactId = "openapi"
-            groupId = "com.turbomates"
+            groupId = "com.turbomates.ktor"
             from(components["java"])
             pom {
                 packaging = "jar"
@@ -101,8 +101,8 @@ publishing {
             val snapshotsUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
             url = if (version.toString().endsWith("SNAPSHOT")) snapshotsUrl else releasesUrl
             credentials {
-                username = project.properties["ossrhUsername"].toString()
-                password = project.properties["ossrhPassword"].toString()
+                username = System.getenv("ORG_GRADLE_PROJECT_SONATYPE_USERNAME") ?: project.properties["ossrhUsername"].toString()
+                password = System.getenv("ORG_GRADLE_PROJECT_SONATYPE_PASSWORD") ?: project.properties["ossrhPassword"].toString()
             }
         }
     }
@@ -114,6 +114,6 @@ signing {
 
 nexusStaging {
     serverUrl = "https://s01.oss.sonatype.org/service/local/"
-    username = project.properties["ossrhUsername"].toString()
-    password = project.properties["ossrhPassword"].toString()
+    username = System.getenv("ORG_GRADLE_PROJECT_SONATYPE_USERNAME") ?: project.properties["ossrhUsername"].toString()
+    password = System.getenv("ORG_GRADLE_PROJECT_SONATYPE_PASSWORD") ?: project.properties["ossrhPassword"].toString()
 }
