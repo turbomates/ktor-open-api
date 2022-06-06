@@ -1,0 +1,49 @@
+name: "Feature Request"
+description: Suggest an idea for this project
+title: "(short issue description)"
+labels: [feature-request, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Community Note
+        1. Please vote on this issue by adding a 👍 to help the community and maintainers prioritize this request
+        2. Please don't leave "+1" or "me too" comments, it don't help prioritize the request
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the feature
+      description: A clear and concise description of the feature you are proposing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your Feature Request related to a problem?
+      description: |
+        A description of the issue, e.g. "It would be great if..."
+    validations:
+      required: true
+
+  - type: input
+    id: kotlin-sdk-version
+    attributes:
+      label: LSports Kotlin SDK version used
+    validations:
+      required: true
+
+  - type: input
+    id: platform-used
+    attributes:
+      label: Platform
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating System and version
+    validations:
+      required: true

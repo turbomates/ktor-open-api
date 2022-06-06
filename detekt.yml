@@ -1,0 +1,73 @@
+build:
+  maxIssues: 6
+  weights:
+    complexity: 2
+    LongParameterList: 1
+    style: 6
+    comments: 1
+
+coroutines:
+  active: true
+  GlobalCoroutineUsage:
+    active: true
+  RedundantSuspendModifier:
+    active: true
+  SleepInsteadOfDelay:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+
+formatting:
+  MaximumLineLength:
+    maxLineLength: 150
+  MultiLineIfElse:
+    active: true
+    autoCorrect: true
+  ParameterListWrapping:
+    active: true
+    autoCorrect: true
+    indentSize: 4
+  NoWildcardImports:
+    active: false
+  NoMultipleSpaces:
+    active: true
+    autoCorrect: false
+
+style:
+  MaxLineLength:
+    active: false
+    maxLineLength: 150
+  ReturnCount:
+    active: false
+  WildcardImport:
+    active: false
+  UnnecessaryAbstractClass:
+    active: false
+  MagicNumber:
+    active: false
+complexity:
+  ComplexMethod:
+    active: true
+    threshold: 15
+  LongParameterList:
+    functionThreshold: 8
+    constructorThreshold: 8
+  ComplexCondition:
+    threshold: 6
+  TooManyFunctions:
+    thresholdInClasses: 40
+    thresholdInFiles: 100
+    thresholdInObjects: 25
+  LongMethod:
+    active: true
+    threshold: 60
+    ignoreAnnotated: [ 'Test' ]
+
+exceptions:
+  TooGenericExceptionCaught:
+    allowedExceptionNameRegex: '_|(ignore|expected|logging|transient).*'
+
+naming:
+  ConstructorParameterNaming:
+    active: true
+    excludeClassPattern: 'SchemaObject|ParameterObject|SecuritySchemaObject|PathItemObject'
