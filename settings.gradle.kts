@@ -21,10 +21,10 @@ dependencyResolutionManagement {
             library("kotlin_reflect", "org.jetbrains.kotlin", "kotlin-reflect").versionRef("kotlin")
             library("swagger_webjar", "org.webjars", "swagger-ui").versionRef("swagger_webjar")
             library("openapi_validator", "io.swagger.parser.v3", "swagger-parser").versionRef("openapi_validator")
+            library("detekt_formatting", "io.gitlab.arturbosch.detekt", "detekt-formatting").versionRef("detekt")
             plugin("kotlin_serialization", "org.jetbrains.kotlin.plugin.serialization").versionRef("kotlin")
             plugin("detekt", "io.gitlab.arturbosch.detekt").versionRef("detekt")
             plugin("nexus_release","io.codearte.nexus-staging").versionRef("nexus_staging")
-            plugin("detekt_formatting","io.gitlab.arturbosch.detekt:detekt-formatting").versionRef("detekt")
         }
     }
 }

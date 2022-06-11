@@ -26,7 +26,7 @@ dependencies {
     implementation(deps.kotlin.serialization.json)
     implementation(deps.kotlin.reflect)
     implementation(deps.swagger.webjar)
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:${deps.versions.detekt.get()}")
+    detektPlugins(deps.detekt.formatting)
     testImplementation(deps.ktor.test)
     testImplementation(deps.openapi.validator)
 }
