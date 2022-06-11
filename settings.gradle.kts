@@ -24,6 +24,7 @@ dependencyResolutionManagement {
             plugin("kotlin_serialization", "org.jetbrains.kotlin.plugin.serialization").versionRef("kotlin")
             plugin("detekt", "io.gitlab.arturbosch.detekt").versionRef("detekt")
             plugin("nexus_release","io.codearte.nexus-staging").versionRef("nexus_staging")
+            plugin("detekt_formatting","io.gitlab.arturbosch.detekt:detekt-formatting").versionRef("detekt")
         }
     }
 }

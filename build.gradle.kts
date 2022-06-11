@@ -72,7 +72,7 @@ publishing {
                 packaging = "jar"
                 name.set("Kotlin Ktor OpenAPI documentation builder")
                 url.set("https://github.com/turbomates/ktor-openAPI")
-                description.set("This library is a client that describes sport line delivery from LSports service")
+                description.set("Kotlin Ktor OpenAPI documentation builder")
 
                 licenses {
                     license {
