@@ -10,6 +10,8 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.jvm.javaio.copyTo
 import java.io.ByteArrayOutputStream
 
+private const val DEFAULT_URL = """url: "https://petstore.swagger.io/v2/swagger.json""""
+
 val SwaggerPath = createApplicationPlugin(name = "SwaggerPath") {
     onCallRespond { call ->
         transformBody { data ->
@@ -17,7 +19,7 @@ val SwaggerPath = createApplicationPlugin(name = "SwaggerPath") {
                 val output = ByteArrayOutputStream()
                 data.readFrom().copyTo(output)
                 val response = String(output.toByteArray())
-                if (response.isNotBlank() && response.contains("""url: "https://petstore.swagger.io/v2/swagger.json"""")) {
+                if (response.isNotBlank() && response.contains(DEFAULT_URL)) {
                     object : OutgoingContent.ReadChannelContent() {
                         override val contentType = data.contentType
 
@@ -28,7 +30,7 @@ val SwaggerPath = createApplicationPlugin(name = "SwaggerPath") {
                         override fun readFrom(): ByteReadChannel =
                             ByteReadChannel(
                                 response.replace(
-                                    """url: "https://petstore.swagger.io/v2/swagger.json"""",
+                                    DEFAULT_URL,
                                     """url: "/api/openapi.json",
                                     operationsSorter: "alpha",
                                     tagsSorter: "alpha""""

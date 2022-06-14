@@ -1,3 +1,5 @@
+@file:Suppress("MemberVisibilityCanBePrivate", "unused")
+
 package com.turbomates.openapi
 
 import java.util.Locale
@@ -12,6 +14,20 @@ import kotlin.reflect.typeOf
 
 class OpenApiKType(val original: KType) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
+    private val KType.openApiType: Type
+        get() {
+            return when {
+                isSubtypeOf(typeOf<String?>()) -> Type.String(nullable = isMarkedNullable)
+                isSubtypeOf(typeOf<Locale?>()) -> Type.String(nullable = isMarkedNullable)
+                isSubtypeOf(typeOf<UUID?>()) -> Type.String(nullable = isMarkedNullable)
+                isSubtypeOf(typeOf<Int?>()) -> Type.Number(isMarkedNullable)
+                isSubtypeOf(typeOf<Float?>()) -> Type.Number(isMarkedNullable)
+                isSubtypeOf(typeOf<Boolean?>()) -> Type.Boolean(isMarkedNullable)
+                isSubtypeOf(typeOf<Double?>()) -> Type.Number(isMarkedNullable)
+                else -> throw UnhandledTypeException(jvmErasure.simpleName!!)
+            }
+        }
+
     private fun buildGenericTypes(type: KType): Map<String, KType> {
         val types = mutableMapOf<String, KType>()
         type.jvmErasure.typeParameters.forEachIndexed { index, kTypeParameter ->
@@ -50,7 +66,7 @@ class OpenApiKType(val original: KType) {
         }
         val descriptions = mutableListOf<Property>()
         type.jvmErasure.memberProperties.forEach { property ->
-            var memberType = property.returnType
+            val memberType = property.returnType
             // ToDo think about parametrization of this option
             if (!property.isLateinit) {
                 descriptions.add(Property(property.name, buildType(memberType)))
@@ -74,9 +90,7 @@ class OpenApiKType(val original: KType) {
                 }
                 when {
                     collectionType.isPrimitive() -> Type.Array(collectionType.openApiType, nullable = memberType.isMarkedNullable)
-                    collectionType.isEnum() -> {
-                        Type.Array(buildType(collectionType), nullable = memberType.isMarkedNullable)
-                    }
+                    collectionType.isEnum() -> Type.Array(buildType(collectionType), nullable = memberType.isMarkedNullable)
                     else -> Type.Array(
                         buildType(collectionType.jvmErasure.simpleName!!, collectionType),
                         nullable = memberType.isMarkedNullable
@@ -106,7 +120,7 @@ class OpenApiKType(val original: KType) {
             memberType.isPrimitive() ->
                 memberType.openApiType
             else -> {
-                var projectionType = projectionTypes.getOrDefault(memberType.toString(), memberType)
+                val projectionType = projectionTypes.getOrDefault(memberType.toString(), memberType)
                 buildType(projectionType.jvmErasure.simpleName!!, projectionType)
             }
         }
@@ -133,20 +147,6 @@ class OpenApiKType(val original: KType) {
     private fun KType.isEnum(): Boolean {
         return this.javaClass.isEnum || isSubtypeOf(typeOf<Enum<*>?>())
     }
-
-    private val KType.openApiType: Type
-        get() {
-            return when {
-                isSubtypeOf(typeOf<String?>()) -> Type.String(nullable = isMarkedNullable)
-                isSubtypeOf(typeOf<Locale?>()) -> Type.String(nullable = isMarkedNullable)
-                isSubtypeOf(typeOf<UUID?>()) -> Type.String(nullable = isMarkedNullable)
-                isSubtypeOf(typeOf<Int?>()) -> Type.Number(isMarkedNullable)
-                isSubtypeOf(typeOf<Float?>()) -> Type.Number(isMarkedNullable)
-                isSubtypeOf(typeOf<Boolean?>()) -> Type.Boolean(isMarkedNullable)
-                isSubtypeOf(typeOf<Double?>()) -> Type.Number(isMarkedNullable)
-                else -> throw UnhandledTypeException(jvmErasure.simpleName!!)
-            }
-        }
 }
 
 val KType.openApiKType: OpenApiKType

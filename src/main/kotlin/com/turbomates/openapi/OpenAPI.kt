@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.turbomates.openapi
 
 import com.turbomates.openapi.spec.Components
@@ -30,36 +32,32 @@ class OpenAPI(var host: String) {
             pathItemObject = PathItemObject()
             root.paths[path] = pathItemObject
         }
-        val pathParamsObjects = pathParams?.toParameterObject(INType.PATH) ?: emptyList()
-        val queryParamsObjects = queryParams?.toParameterObject(INType.QUERY) ?: emptyList()
+        val pathParamsObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
+        val queryParamsObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
         when (method) {
-            Method.GET -> {
+            Method.GET ->
                 pathItemObject.get = pathItemObject.get?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     parameters = pathParamsObjects + queryParamsObjects
                 )
-            }
-            Method.POST -> {
+            Method.POST ->
                 pathItemObject.post = pathItemObject.post?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
-            }
-            Method.DELETE -> {
+            Method.DELETE ->
                 pathItemObject.delete = pathItemObject.delete?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
-            }
-            Method.PATCH -> {
+            Method.PATCH ->
                 pathItemObject.patch = pathItemObject.patch?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
-            }
         }
     }
 
@@ -84,27 +82,23 @@ class OpenAPI(var host: String) {
     private fun Type.toRequestBodyObject(): RequestBodyObject {
         return RequestBodyObject(
             content = mapOf("application/json" to MediaTypeObject(schema = toSchemaObject())),
-            required = required
+            required = isRequired
         )
     }
 
     @Suppress("FunctionParameterNaming", "UnusedPrivateMember")
     private fun Type.Object.toParameterObject(`in`: INType): List<ParameterObject> {
         return properties.map {
-            ParameterObject(it.name, schema = it.type.toSchemaObject(), required = it.type.required, `in` = `in`.value)
+            ParameterObject(it.name, schema = it.type.toSchemaObject(), required = it.type.isRequired, `in` = `in`.value)
         }
     }
 
     private fun Type.toSchemaObject(): SchemaObject {
         return when (this) {
-            is Type.String -> {
-                SchemaObject(type = "string", enum = this.values, example = this.example, nullable = this.nullable)
-            }
-            is Type.Array -> {
-                SchemaObject(type = "array", items = this.type.toSchemaObject(), enum = this.values, nullable = this.nullable)
-            }
-            is Type.Object -> {
-                if (customTypes.containsKey(this.returnType) && this.returnType !== null) {
+            is Type.String -> SchemaObject(type = "string", enum = this.values, example = this.example, nullable = this.nullable)
+            is Type.Array -> SchemaObject(type = "array", items = this.type.toSchemaObject(), enum = this.values, nullable = this.nullable)
+            is Type.Object ->
+                if (customTypes.containsKey(this.returnType) && this.returnType != null) {
                     customTypes.getValue(this.returnType).toSchemaObject()
                 } else {
                     SchemaObject(
@@ -114,19 +108,12 @@ class OpenAPI(var host: String) {
                         nullable = this.nullable
                     )
                 }
-            }
-            is Type.Boolean -> {
-                SchemaObject(type = "boolean", nullable = this.nullable)
-            }
-            is Type.Number -> {
-                SchemaObject(type = "number", nullable = this.nullable)
-            }
+            is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.nullable)
+            is Type.Number -> SchemaObject(type = "number", nullable = this.nullable)
         }
     }
 
-    enum class Method {
-        GET, POST, DELETE, PATCH
-    }
+    enum class Method { GET, POST, DELETE, PATCH }
 
     private fun OperationObject.merge(
         responses: Map<Int, Type>,
@@ -134,10 +121,10 @@ class OpenAPI(var host: String) {
         pathParams: Type.Object? = null,
         queryParams: Type.Object? = null,
     ): OperationObject {
-        val pathParameterObjects = pathParams?.toParameterObject(INType.PATH) ?: emptyList()
-        val queryParameterObjects = queryParams?.toParameterObject(INType.QUERY) ?: emptyList()
-        val parameters: List<ParameterObject>? =
-            parameters?.plus(pathParameterObjects)?.plus(queryParameterObjects) ?: pathParameterObjects.plus(queryParameterObjects)
+        val pathParameterObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
+        val queryParameterObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
+        val parameters: List<ParameterObject> =
+            parameters?.run { plus(pathParameterObjects).plus(queryParameterObjects) } ?: pathParameterObjects.plus(queryParameterObjects)
         val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
         val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
         return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult)
@@ -156,7 +143,7 @@ enum class INType(val value: String) {
 }
 
 sealed class Type(val nullable: kotlin.Boolean = true) {
-    val required: kotlin.Boolean
+    val isRequired: kotlin.Boolean
         get() = !nullable
 
     class String(val values: List<kotlin.String>? = null, val example: JsonElement? = null, nullable: kotlin.Boolean) : Type(nullable)
