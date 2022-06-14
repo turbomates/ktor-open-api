@@ -5,7 +5,7 @@ dependencyResolutionManagement {
     versionCatalogs {
         create("deps") {
             version("ktor", "2.0.2")
-            version("detekt", "1.20.0")
+            version("detekt", "1.21.0-RC1")
             version("kotlin", "1.6.20")
             version("swagger_webjar", "4.1.3")
             version("kotlin_serialization_json", "1.3.1")

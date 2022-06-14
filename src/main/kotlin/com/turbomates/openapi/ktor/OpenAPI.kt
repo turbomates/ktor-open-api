@@ -4,7 +4,6 @@ import com.turbomates.openapi.OpenApiKType
 import com.turbomates.openapi.Type
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.serialization.Configuration
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.BaseApplicationPlugin
 import io.ktor.server.application.call

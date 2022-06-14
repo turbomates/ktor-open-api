@@ -1,3 +1,5 @@
+@file:Suppress("unused", "OPT_IN_USAGE")
+
 package com.turbomates.openapi.ktor
 
 import com.turbomates.openapi.openApiKType
@@ -327,16 +329,16 @@ fun OpenAPI.addToPath(
         addToPath(
             path,
             com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
-            response?.openApiKType?.let(responseBuilder) ?: emptyMap(),
-            body?.openApiKType?.let(typeBuilder),
-            pathParams?.openApiKType?.let(typeBuilder),
-            queryParams?.openApiKType?.let(typeBuilder)
+            response?.run { openApiKType.run(responseBuilder) }.orEmpty(),
+            body?.run { openApiKType.run(typeBuilder) },
+            pathParams?.run { openApiKType.run(typeBuilder) },
+            queryParams?.run { openApiKType.run(typeBuilder) }
         )
     }
 }
 
 fun Route.buildFullPath(): String {
-    return toString().replace(Regex("\\/\\(.*?\\)"), "")
+    return toString().replace(Regex("/\\(.*?\\)"), "")
 }
 
 val Route.openApi: OpenAPI
