@@ -5,4 +5,5 @@ Creates OpenApi documentation based on Ktor routing and response return types
 ```
 ./gradlew detektMain
 ./gradlew detektTest
+./gradlew detektBaselineMain
 ```
