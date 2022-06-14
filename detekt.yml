@@ -36,6 +36,8 @@ complexity:
     active: true
     threshold: 2
     ignoreStringsRegex: '\b(Not yet implemented|default)\b'
+    excludes:
+      - '**/test/**'
   ReplaceSafeCallChainWithRun:
     active: true
   LongParameterList:
@@ -121,6 +123,8 @@ naming:
   FunctionMaxLength:
     active: true
     maximumFunctionNameLength: 40
+    excludes:
+      - '**/test/**'
   FunctionMinLength:
     active: true
     minimumFunctionNameLength: 2
