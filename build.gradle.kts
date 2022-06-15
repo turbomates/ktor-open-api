@@ -45,6 +45,11 @@ detekt {
     parallel = true
     config = files("detekt.yml")
 }
+tasks.named("check").configure {
+    this.setDependsOn(this.dependsOn.filterNot {
+        it is TaskProvider<*> && it.name == "detekt"
+    })
+}
 
 java {
     withJavadocJar()

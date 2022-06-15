@@ -1,7 +1,0 @@
-<?xml version="1.0" ?>
-<SmellBaseline>
-  <ManuallySuppressedIssues></ManuallySuppressedIssues>
-  <CurrentIssues>
-    <ID>StringLiteralDuplication:OpenAPI.kt$OpenAPI$"application/json"</ID>
-  </CurrentIssues>
-</SmellBaseline>
