@@ -26,7 +26,6 @@ dependencies {
     implementation(deps.kotlin.serialization.json)
     implementation(deps.kotlin.reflect)
     implementation(deps.swagger.webjar)
-    detektPlugins(deps.detekt.formatting)
     testImplementation(deps.ktor.test)
     testImplementation(deps.openapi.validator)
     detektPlugins(deps.detekt.formatting)
