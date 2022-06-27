@@ -6,13 +6,14 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
+import kotlin.reflect.full.createType
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.javaType
 import kotlin.reflect.jvm.jvmErasure
 import kotlin.reflect.typeOf
 
-class OpenApiKType(val original: KType) {
+class OpenApiKType(private val original: KType) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
     private val KType.openApiType: Type
         get() {
@@ -37,6 +38,10 @@ class OpenApiKType(val original: KType) {
         return types
     }
 
+    fun isSubtypeOf(openApiKType: OpenApiKType): Boolean {
+        return original.isSubtypeOf(openApiKType.original)
+    }
+
     fun type(): Type {
         return buildType(original)
     }
@@ -53,6 +58,10 @@ class OpenApiKType(val original: KType) {
             return OpenApiKType(projectionTypes.getValue(type.toString()))
         }
         return OpenApiKType(type)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return other is OpenApiKType && other.original == original
     }
 
     private fun buildType(name: String, type: KType): Type {
@@ -97,6 +106,7 @@ class OpenApiKType(val original: KType) {
                     )
                 }
             }
+
             memberType.isMap() -> {
                 val argType = memberType.arguments[0].type!!
                 val firstType = projectionTypes.getOrDefault(argType.toString(), argType)
@@ -113,12 +123,15 @@ class OpenApiKType(val original: KType) {
                     nullable = memberType.isMarkedNullable
                 )
             }
+
             memberType.isEnum() -> {
                 val values = memberType.jvmErasure.java.enumConstants
                 Type.String(values.map { it.toString() }, nullable = memberType.isMarkedNullable)
             }
+
             memberType.isPrimitive() ->
                 memberType.openApiType
+
             else -> {
                 val projectionType = projectionTypes.getOrDefault(memberType.toString(), memberType)
                 buildType(projectionType.jvmErasure.simpleName!!, projectionType)
@@ -128,12 +141,12 @@ class OpenApiKType(val original: KType) {
 
     private fun KType.isPrimitive(): Boolean {
         return javaClass.isPrimitive ||
-            isSubtypeOf(typeOf<String?>()) ||
-            isSubtypeOf(typeOf<Int?>()) ||
-            isSubtypeOf(typeOf<Float?>()) ||
-            isSubtypeOf(typeOf<Double?>()) ||
-            isSubtypeOf(typeOf<Boolean?>()) ||
-            isSubtypeOf(typeOf<UUID?>())
+                isSubtypeOf(typeOf<String?>()) ||
+                isSubtypeOf(typeOf<Int?>()) ||
+                isSubtypeOf(typeOf<Float?>()) ||
+                isSubtypeOf(typeOf<Double?>()) ||
+                isSubtypeOf(typeOf<Boolean?>()) ||
+                isSubtypeOf(typeOf<UUID?>())
     }
 
     private fun KType.isCollection(): Boolean {
@@ -151,6 +164,10 @@ class OpenApiKType(val original: KType) {
 
 val KType.openApiKType: OpenApiKType
     get() = OpenApiKType(this)
+
+inline fun <reified T : Any> KClass<T>.openApiKType(): OpenApiKType {
+    return typeOf<T>().openApiKType
+}
 
 class UnhandledTypeException(type: String) : Exception("unhandled type $type")
 class InvalidTypeForOpenApiType(type: String, openApiType: String) : Exception("Invalid $type to build $openApiType")

@@ -4,6 +4,7 @@ package com.turbomates.openapi.ktor
 
 import com.turbomates.openapi.openApiKType
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.application.plugin
@@ -325,11 +326,11 @@ fun OpenAPI.addToPath(
     pathParams: KType? = null,
     queryParams: KType? = null
 ) {
-    extendDocumentation { responseBuilder, typeBuilder ->
+    extendDocumentation { responseMap, typeBuilder ->
         addToPath(
             path,
             com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
-            response?.run { openApiKType.run(responseBuilder) }.orEmpty(),
+            response?.run { mapOf(responseMap.getOrDefault(openApiKType, HttpStatusCode.OK.value) to openApiKType.run(typeBuilder)) }.orEmpty(),
             body?.run { openApiKType.run(typeBuilder) },
             pathParams?.run { openApiKType.run(typeBuilder) },
             queryParams?.run { openApiKType.run(typeBuilder) }

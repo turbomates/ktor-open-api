@@ -40,18 +40,21 @@ class OpenAPI(var host: String) {
                     responses.mapValues { it.value.toResponseObject() },
                     parameters = pathParamsObjects + queryParamsObjects
                 )
+
             Method.POST ->
                 pathItemObject.post = pathItemObject.post?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
+
             Method.DELETE ->
                 pathItemObject.delete = pathItemObject.delete?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
+
             Method.PATCH ->
                 pathItemObject.patch = pathItemObject.patch?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
@@ -108,6 +111,7 @@ class OpenAPI(var host: String) {
                         nullable = this.nullable
                     )
                 }
+
             is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.nullable)
             is Type.Number -> SchemaObject(type = "number", nullable = this.nullable)
         }
@@ -146,7 +150,7 @@ sealed class Type(val nullable: kotlin.Boolean = true) {
     val isRequired: kotlin.Boolean
         get() = !nullable
 
-    class String(val values: List<kotlin.String>? = null, val example: JsonElement? = null, nullable: kotlin.Boolean) : Type(nullable)
+    class String(val values: List<kotlin.String>? = null, val example: JsonElement? = null, nullable: kotlin.Boolean = true) : Type(nullable)
     class Array(val type: Type, val values: List<kotlin.String>? = null, nullable: kotlin.Boolean) : Type(nullable)
     class Object(
         val name: kotlin.String,

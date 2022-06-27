@@ -14,26 +14,24 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI
 
-typealias ResponseBuilder = (OpenApiKType) -> Map<Int, Type>
 typealias TypeBuilder = (OpenApiKType) -> Type.Object
 
 class OpenAPI(configuration: Configuration) {
     private val typeBuilder: TypeBuilder = configuration.typeBuilder
-    private val responseBuilder: ResponseBuilder = configuration.responseBuilder
+    private val responseMap: Map<OpenApiKType, Int> = configuration.responseMap
     private val documentationBuilder: SwaggerOpenAPI = configuration.documentationBuilder
     private val path: String = configuration.path
     private val json = Json {
         encodeDefaults = false
     }
 
-    fun extendDocumentation(extension: SwaggerOpenAPI.(ResponseBuilder, TypeBuilder) -> Unit) {
-        documentationBuilder.extension(responseBuilder, typeBuilder)
+    fun extendDocumentation(extension: SwaggerOpenAPI.(Map<OpenApiKType, Int>, TypeBuilder) -> Unit) {
+        documentationBuilder.extension(responseMap, typeBuilder)
     }
 
     class Configuration {
         var typeBuilder: (OpenApiKType) -> Type.Object = { type -> type.objectType("response") }
-        var responseBuilder: (OpenApiKType) -> Map<Int, Type> =
-            { type -> mapOf(HttpStatusCode.OK.value to type.type()) }
+        var responseMap: Map<OpenApiKType, Int> = emptyMap()
         var path = "/openapi.json"
         var configure: (SwaggerOpenAPI) -> Unit = {}
         var documentationBuilder: SwaggerOpenAPI = SwaggerOpenAPI("localhost")
