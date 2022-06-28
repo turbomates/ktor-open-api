@@ -42,11 +42,7 @@ class OpenApiKType(private val original: KType) {
         return original.isSubtypeOf(openApiKType.original)
     }
 
-    fun type(): Type {
-        return buildType(original)
-    }
-
-    fun objectType(name: String): Type.Object {
+    fun objectType(name: String = original.javaType.typeName): Type.Object {
         if (original.isCollection() || original.isPrimitive()) {
             throw InvalidTypeForOpenApiType(original.javaType.typeName, Type.Object::class.simpleName!!)
         }

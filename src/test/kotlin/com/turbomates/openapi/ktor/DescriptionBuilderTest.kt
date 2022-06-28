@@ -24,9 +24,9 @@ class DescriptionBuilderTest {
             responseMap = {
                 mapOf(400 to typeBuilder(this))
             }
-            typeBuilder = { openApiKType ->
+            typeBuilder = {
                 when {
-                    openApiKType.isSubtypeOf(TestResponse::class.openApiKType()) -> {
+                    isSubtypeOf(TestResponse::class.openApiKType()) -> {
                         Type.Object(
                             "error",
                             listOf(
@@ -40,7 +40,7 @@ class DescriptionBuilderTest {
                         )
                     }
 
-                    else -> openApiKType.objectType("response")
+                    else -> objectType()
                 }
             }
         }

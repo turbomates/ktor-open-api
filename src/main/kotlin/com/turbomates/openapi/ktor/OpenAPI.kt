@@ -30,8 +30,8 @@ class OpenAPI(configuration: Configuration) {
     }
 
     class Configuration {
-        var typeBuilder: (OpenApiKType) -> Type.Object = { type -> type.objectType("response") }
-        var responseMap: OpenApiKType.() -> Map<Int, Type> = { mapOf(HttpStatusCode.OK.value to typeBuilder(this)) }
+        var typeBuilder: OpenApiKType.() -> Type.Object = { objectType() }
+        var responseMap: OpenApiKType.() -> Map<Int, Type> = { mapOf(HttpStatusCode.OK.value to typeBuilder()) }
         var path = "/openapi.json"
         var configure: (SwaggerOpenAPI) -> Unit = {}
         var documentationBuilder: SwaggerOpenAPI = SwaggerOpenAPI("localhost")
