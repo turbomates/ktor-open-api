@@ -21,7 +21,9 @@ class DescriptionBuilderTest {
     @Test
     fun `custom description`() = testApplication {
         install(OpenAPI) {
-            responseMap = mapOf(TestResponse::class.openApiKType() to 400)
+            responseMap = {
+                mapOf(400 to typeBuilder(this))
+            }
             typeBuilder = { openApiKType ->
                 when {
                     openApiKType.isSubtypeOf(TestResponse::class.openApiKType()) -> {

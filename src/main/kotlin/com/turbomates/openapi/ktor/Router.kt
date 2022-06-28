@@ -2,6 +2,7 @@
 
 package com.turbomates.openapi.ktor
 
+import com.turbomates.openapi.Type
 import com.turbomates.openapi.openApiKType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -330,7 +331,7 @@ fun OpenAPI.addToPath(
         addToPath(
             path,
             com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
-            response?.run { mapOf(responseMap.getOrDefault(openApiKType, HttpStatusCode.OK.value) to openApiKType.run(typeBuilder)) }.orEmpty(),
+            response?.run { responseMap(openApiKType) } ?: emptyMap(),
             body?.run { openApiKType.run(typeBuilder) },
             pathParams?.run { openApiKType.run(typeBuilder) },
             queryParams?.run { openApiKType.run(typeBuilder) }
