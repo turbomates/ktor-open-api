@@ -77,7 +77,7 @@ class OpenApiKType(private val original: KType) {
                 descriptions.add(Property(property.name, buildType(memberType)))
             }
         }
-        return Type.Object(name, descriptions, returnType = type.jvmErasure.qualifiedName, nullable = type.isMarkedNullable)
+        return Type.Object(name, descriptions, returnType = type, nullable = type.isMarkedNullable)
     }
 
     private fun buildType(memberType: KType): Type {

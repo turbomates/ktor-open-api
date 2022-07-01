@@ -14,10 +14,11 @@ import com.turbomates.openapi.spec.Root
 import com.turbomates.openapi.spec.SchemaObject
 import kotlinx.serialization.json.JsonElement
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
 
 class OpenAPI(var host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
-    private val customTypes: MutableMap<String, Type> = mutableMapOf()
+    private val customTypes: MutableMap<KType, Type> = mutableMapOf()
 
     fun addToPath(
         path: String,
@@ -71,8 +72,8 @@ class OpenAPI(var host: String) {
         )
     }
 
-    fun setCustomClassType(clazz: KClass<*>, type: Type) {
-        customTypes[clazz.qualifiedName!!] = type
+    fun setCustomClassType(kType: KType, type: Type) {
+        customTypes[kType] = type
     }
 
     private fun Type.toResponseObject(): ResponseObject {
@@ -156,7 +157,7 @@ sealed class Type(val nullable: kotlin.Boolean = true) {
         val name: kotlin.String,
         val properties: List<Property>,
         val example: JsonElement? = null,
-        val returnType: kotlin.String? = null,
+        val returnType: KType? = null,
         nullable: kotlin.Boolean
     ) : Type(nullable)
 

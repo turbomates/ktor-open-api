@@ -10,28 +10,29 @@ import io.ktor.server.application.call
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import io.ktor.util.AttributeKey
+import kotlin.reflect.KClass
+import kotlin.reflect.KType
+import kotlin.reflect.jvm.jvmErasure
+import kotlin.reflect.typeOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI
 
-typealias TypeBuilder = (OpenApiKType) -> Type.Object
-
 class OpenAPI(configuration: Configuration) {
-    private val typeBuilder: TypeBuilder = configuration.typeBuilder
-    private val responseMap: OpenApiKType.() -> Map<Int, Type> = configuration.responseMap
+    private val responseMap: KType.() -> Map<Int, KType> = configuration.responseMap
     private val documentationBuilder: SwaggerOpenAPI = configuration.documentationBuilder
     private val path: String = configuration.path
     private val json = Json {
         encodeDefaults = false
     }
 
-    fun extendDocumentation(extension: SwaggerOpenAPI.(OpenApiKType.() -> Map<Int, Type>, TypeBuilder) -> Unit) {
-        documentationBuilder.extension(responseMap, typeBuilder)
+    fun extendDocumentation(extension: SwaggerOpenAPI.(KType.() -> Map<Int, KType>) -> Unit) {
+        documentationBuilder.extension(responseMap)
     }
 
     class Configuration {
-        var typeBuilder: OpenApiKType.() -> Type.Object = { objectType() }
-        var responseMap: OpenApiKType.() -> Map<Int, Type> = { mapOf(HttpStatusCode.OK.value to typeBuilder()) }
+        var responseMap: KType.() -> Map<Int, KType> = { mapOf(HttpStatusCode.OK.value to this) }
+        var customMap: Map<KType, Type> = emptyMap()
         var path = "/openapi.json"
         var configure: (SwaggerOpenAPI) -> Unit = {}
         var documentationBuilder: SwaggerOpenAPI = SwaggerOpenAPI("localhost")
@@ -43,6 +44,9 @@ class OpenAPI(configuration: Configuration) {
             val configuration = Configuration().apply(configure)
             val plugin = OpenAPI(configuration)
             configuration.configure(plugin.documentationBuilder)
+            configuration.customMap.forEach {
+                plugin.documentationBuilder.setCustomClassType(it.key, it.value)
+            }
             pipeline.intercept(ApplicationCallPipeline.Call) {
                 if (call.request.path() == plugin.path) {
                     val response = plugin.json.encodeToString(plugin.documentationBuilder.root)

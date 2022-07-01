@@ -22,27 +22,22 @@ class DescriptionBuilderTest {
     fun `custom description`() = testApplication {
         install(OpenAPI) {
             responseMap = {
-                mapOf(400 to typeBuilder(this))
+                mapOf(400 to typeOf<TestResponse>())
             }
-            typeBuilder = {
-                when {
-                    isSubtypeOf(TestResponse::class.openApiKType()) -> {
-                        Type.Object(
+            customMap = mapOf(
+                typeOf<TestResponse>() to Type.Object(
+                    "error",
+                    listOf(
+                        Property(
                             "error",
-                            listOf(
-                                Property(
-                                    "error",
-                                    Type.String()
-                                )
-                            ),
-                            example = buildJsonObject { put("error", "Wrong response") },
-                            nullable = false
+                            Type.String()
                         )
-                    }
+                    ),
+                    example = buildJsonObject { put("error", "Wrong response") },
+                    nullable = false
+                )
 
-                    else -> objectType()
-                }
-            }
+            )
         }
         routing {
             post<TestResponse, TestRequest>("/test") {
@@ -58,6 +53,39 @@ class DescriptionBuilderTest {
 
     }
 
+    @Test
+    fun `custom description with template class`() = testApplication {
+        install(OpenAPI) {
+            customMap = mapOf(
+                typeOf<TestTemplateClass<String>>() to Type.Object(
+                    "error",
+                    listOf(
+                        Property(
+                            "error",
+                            Type.String()
+                        )
+                    ),
+                    example = buildJsonObject { put("error", "Wrong response") },
+                    nullable = false
+                )
+
+            )
+
+        }
+        routing {
+            post<TestTemplateClass<String>, TestRequest>("/test") {
+                TestTemplateClass("test")
+            }
+        }
+        val response = client.get("/openapi.json")
+        val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
+        assertEquals(0, result.messages.count())
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertContains(response.bodyAsText(), "\"responses\":{\"200\"")
+        assertContains(response.bodyAsText(), "\"example\":{\"error\":\"Wrong response\"}")
+    }
+
+    private data class TestTemplateClass<T : Any>(val value: T)
     private data class TestResponse(val status: HttpStatusCode, val body: String)
     private data class TestRequest(val body: String)
 }

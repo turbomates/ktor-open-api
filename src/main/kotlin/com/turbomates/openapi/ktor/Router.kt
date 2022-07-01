@@ -327,15 +327,17 @@ fun OpenAPI.addToPath(
     pathParams: KType? = null,
     queryParams: KType? = null
 ) {
-    extendDocumentation { responseMap, typeBuilder ->
-        addToPath(
-            path,
-            com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
-            response?.run { responseMap(openApiKType) } ?: emptyMap(),
-            body?.run { openApiKType.run(typeBuilder) },
-            pathParams?.run { openApiKType.run(typeBuilder) },
-            queryParams?.run { openApiKType.run(typeBuilder) }
-        )
+    extendDocumentation { responseMap ->
+        if (response != null) {
+            addToPath(
+                path,
+                com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
+                response?.run { responseMap(this).mapValues { it.value.openApiKType.objectType() } }?: emptyMap(),
+                body?.openApiKType?.objectType(),
+                pathParams?.openApiKType?.objectType(),
+                queryParams?.openApiKType?.objectType()
+            )
+        }
     }
 }
 
