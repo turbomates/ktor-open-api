@@ -1,6 +1,5 @@
 package com.turbomates.openapi.ktor
 
-import com.turbomates.openapi.OpenApiKType
 import com.turbomates.openapi.Type
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -10,16 +9,13 @@ import io.ktor.server.application.call
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import io.ktor.util.AttributeKey
-import kotlin.reflect.KClass
 import kotlin.reflect.KType
-import kotlin.reflect.jvm.jvmErasure
-import kotlin.reflect.typeOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI
 
 class OpenAPI(configuration: Configuration) {
-    private val responseMap: KType.() -> Map<Int, KType> = configuration.responseMap
+    private val responseCodeMap: KType.() -> Map<Int, KType> = configuration.responseCodeMap
     private val documentationBuilder: SwaggerOpenAPI = configuration.documentationBuilder
     private val path: String = configuration.path
     private val json = Json {
@@ -27,12 +23,12 @@ class OpenAPI(configuration: Configuration) {
     }
 
     fun extendDocumentation(extension: SwaggerOpenAPI.(KType.() -> Map<Int, KType>) -> Unit) {
-        documentationBuilder.extension(responseMap)
+        documentationBuilder.extension(responseCodeMap)
     }
 
     class Configuration {
-        var responseMap: KType.() -> Map<Int, KType> = { mapOf(HttpStatusCode.OK.value to this) }
-        var customMap: Map<KType, Type> = emptyMap()
+        var responseCodeMap: KType.() -> Map<Int, KType> = { mapOf(HttpStatusCode.OK.value to this) }
+        var customTypeDescription: Map<KType, Type> = emptyMap()
         var path = "/openapi.json"
         var configure: (SwaggerOpenAPI) -> Unit = {}
         var documentationBuilder: SwaggerOpenAPI = SwaggerOpenAPI("localhost")
@@ -44,7 +40,7 @@ class OpenAPI(configuration: Configuration) {
             val configuration = Configuration().apply(configure)
             val plugin = OpenAPI(configuration)
             configuration.configure(plugin.documentationBuilder)
-            configuration.customMap.forEach {
+            configuration.customTypeDescription.forEach {
                 plugin.documentationBuilder.setCustomClassType(it.key, it.value)
             }
             pipeline.intercept(ApplicationCallPipeline.Call) {

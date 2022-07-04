@@ -1,9 +1,7 @@
 package com.turbomates.openapi.ktor
 
-import com.turbomates.openapi.OpenApiKType
 import com.turbomates.openapi.Property
 import com.turbomates.openapi.Type
-import com.turbomates.openapi.openApiKType
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
@@ -21,10 +19,10 @@ class DescriptionBuilderTest {
     @Test
     fun `custom description`() = testApplication {
         install(OpenAPI) {
-            responseMap = {
+            responseCodeMap = {
                 mapOf(400 to typeOf<TestResponse>())
             }
-            customMap = mapOf(
+            customTypeDescription = mapOf(
                 typeOf<TestResponse>() to Type.Object(
                     "error",
                     listOf(
@@ -54,23 +52,16 @@ class DescriptionBuilderTest {
     }
 
     @Test
-    fun `custom description with template class`() = testApplication {
+    fun `custom response code with template class`() = testApplication {
         install(OpenAPI) {
-            customMap = mapOf(
-                typeOf<TestTemplateClass<String>>() to Type.Object(
-                    "error",
-                    listOf(
-                        Property(
-                            "error",
-                            Type.String()
-                        )
-                    ),
-                    example = buildJsonObject { put("error", "Wrong response") },
-                    nullable = false
-                )
-
-            )
-
+            responseCodeMap = {
+                when {
+                    this.isSubtypeOf(typeOf<TestTemplateClass<*>>()) -> mapOf(
+                        400 to typeOf<TestTemplateClass<Any>>()
+                    )
+                    else -> mapOf(200 to typeOf<TestTemplateClass<Any>>())
+                }
+            }
         }
         routing {
             post<TestTemplateClass<String>, TestRequest>("/test") {
@@ -81,8 +72,7 @@ class DescriptionBuilderTest {
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
         assertEquals(0, result.messages.count())
         assertEquals(HttpStatusCode.OK, response.status)
-        assertContains(response.bodyAsText(), "\"responses\":{\"200\"")
-        assertContains(response.bodyAsText(), "\"example\":{\"error\":\"Wrong response\"}")
+        assertContains(response.bodyAsText(), "\"responses\":{\"400\"")
     }
 
     private data class TestTemplateClass<T : Any>(val value: T)
