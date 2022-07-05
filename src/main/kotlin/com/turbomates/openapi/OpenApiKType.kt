@@ -6,7 +6,6 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
-import kotlin.reflect.full.createType
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.javaType
@@ -16,16 +15,14 @@ import kotlin.time.Duration
 
 class OpenApiKType(private val original: KType) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
-    private val KType.openApiType: Type
+    private val KType.primitiveType: Type
         get() {
             return when {
                 isSubtypeOf(typeOf<String?>()) -> Type.String(nullable = isMarkedNullable)
                 isSubtypeOf(typeOf<Locale?>()) -> Type.String(nullable = isMarkedNullable)
                 isSubtypeOf(typeOf<UUID?>()) -> Type.String(nullable = isMarkedNullable)
-                isSubtypeOf(typeOf<Int?>()) -> Type.Number(isMarkedNullable)
-                isSubtypeOf(typeOf<Float?>()) -> Type.Number(isMarkedNullable)
+                isSubtypeOf(typeOf<Number?>()) -> Type.Number(isMarkedNullable)
                 isSubtypeOf(typeOf<Boolean?>()) -> Type.Boolean(isMarkedNullable)
-                isSubtypeOf(typeOf<Double?>()) -> Type.Number(isMarkedNullable)
                 isSubtypeOf(typeOf<Duration?>()) -> Type.String(nullable = isMarkedNullable)
                 else -> throw UnhandledTypeException(jvmErasure.simpleName!!)
             }
@@ -71,11 +68,15 @@ class OpenApiKType(private val original: KType) {
         if (kclass != null && kclass.isValue) {
             return buildType(type.jvmErasure.memberProperties.first().returnType)
         }
+        return buildObjectType(name, type)
+    }
+
+    fun buildObjectType(name: String, type: KType): Type.Object {
         val descriptions = mutableListOf<Property>()
         type.jvmErasure.memberProperties.forEach { property ->
             val memberType = property.returnType
             // ToDo think about parametrization of this option
-            if (!property.isLateinit) {
+            if (!property.isLateinit && type != memberType) {
                 descriptions.add(Property(property.name, buildType(memberType)))
             }
         }
@@ -96,7 +97,7 @@ class OpenApiKType(private val original: KType) {
                     collectionType = projectionTypes.getValue(collectionType.toString())
                 }
                 when {
-                    collectionType.isPrimitive() -> Type.Array(collectionType.openApiType, nullable = memberType.isMarkedNullable)
+                    collectionType.isPrimitive() -> Type.Array(collectionType.primitiveType, nullable = memberType.isMarkedNullable)
                     collectionType.isEnum() -> Type.Array(buildType(collectionType), nullable = memberType.isMarkedNullable)
                     else -> Type.Array(
                         buildType(collectionType.jvmErasure.simpleName!!, collectionType),
@@ -128,21 +129,20 @@ class OpenApiKType(private val original: KType) {
             }
 
             memberType.isPrimitive() ->
-                memberType.openApiType
+                memberType.primitiveType
 
             else -> {
                 val projectionType = projectionTypes.getOrDefault(memberType.toString(), memberType)
-                buildType(projectionType.jvmErasure.simpleName!!, projectionType)
+                if (projectionType != memberType) {
+                    buildType(projectionType.jvmErasure.simpleName!!, projectionType)
+                } else buildObjectType(memberType.jvmErasure.simpleName!!, memberType)
             }
         }
     }
 
     private fun KType.isPrimitive(): Boolean {
-        return javaClass.isPrimitive ||
-                isSubtypeOf(typeOf<String?>()) ||
-                isSubtypeOf(typeOf<Int?>()) ||
-                isSubtypeOf(typeOf<Float?>()) ||
-                isSubtypeOf(typeOf<Double?>()) ||
+        return isSubtypeOf(typeOf<String?>()) ||
+                isSubtypeOf(typeOf<Number?>()) ||
                 isSubtypeOf(typeOf<Boolean?>()) ||
                 isSubtypeOf(typeOf<UUID?>()) ||
                 isSubtypeOf(typeOf<Duration?>())
