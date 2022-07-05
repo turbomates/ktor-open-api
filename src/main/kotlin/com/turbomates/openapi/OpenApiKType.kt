@@ -12,6 +12,7 @@ import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.javaType
 import kotlin.reflect.jvm.jvmErasure
 import kotlin.reflect.typeOf
+import kotlin.time.Duration
 
 class OpenApiKType(private val original: KType) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
@@ -25,6 +26,7 @@ class OpenApiKType(private val original: KType) {
                 isSubtypeOf(typeOf<Float?>()) -> Type.Number(isMarkedNullable)
                 isSubtypeOf(typeOf<Boolean?>()) -> Type.Boolean(isMarkedNullable)
                 isSubtypeOf(typeOf<Double?>()) -> Type.Number(isMarkedNullable)
+                isSubtypeOf(typeOf<Duration?>()) -> Type.String(nullable = isMarkedNullable)
                 else -> throw UnhandledTypeException(jvmErasure.simpleName!!)
             }
         }
@@ -142,7 +144,8 @@ class OpenApiKType(private val original: KType) {
                 isSubtypeOf(typeOf<Float?>()) ||
                 isSubtypeOf(typeOf<Double?>()) ||
                 isSubtypeOf(typeOf<Boolean?>()) ||
-                isSubtypeOf(typeOf<UUID?>())
+                isSubtypeOf(typeOf<UUID?>()) ||
+                isSubtypeOf(typeOf<Duration?>())
     }
 
     private fun KType.isCollection(): Boolean {
