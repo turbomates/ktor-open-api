@@ -2,10 +2,8 @@
 
 package com.turbomates.openapi.ktor
 
-import com.turbomates.openapi.Type
 import com.turbomates.openapi.openApiKType
 import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.application.plugin
@@ -71,7 +69,7 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.post(
     return route
 }
 
-inline fun <reified TResponse : Any, reified TParams : Any> Route.postParams(
+inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPost(
     path: String,
     noinline body: suspend PipelineContext<Unit, ApplicationCall>.(TParams) -> TResponse
 ): Route {
@@ -103,7 +101,8 @@ inline fun <reified TResponse : Any, reified TBody : Any, reified TParams : Any>
         HttpMethod.Post,
         response = typeOf<TResponse>(),
         body = typeOf<TBody>(),
-        pathParams = typeOf<TParams>()
+        pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
     )
     return route
 }
@@ -176,11 +175,13 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.get(
             call.respond(body(locations.resolve(TParams::class, call)))
         }
     }
+
     openApi.addToPath(
         route.buildFullPath(),
         HttpMethod.Get,
         response = typeOf<TResponse>(),
-        pathParams = typeOf<TParams>()
+        pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
     )
     return route
 }
@@ -250,7 +251,8 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.delete(
         route.buildFullPath(),
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
-        pathParams = typeOf<TParams>()
+        pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
     )
     return route
 }
@@ -332,13 +334,17 @@ fun OpenAPI.addToPath(
             addToPath(
                 path,
                 com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
-                response?.run { responseMap(this).mapValues { it.value.openApiKType.objectType() } }?: emptyMap(),
+                response.run { responseMap(this).mapValues { it.value.openApiKType.objectType() } },
                 body?.openApiKType?.objectType(),
                 pathParams?.openApiKType?.objectType(),
                 queryParams?.openApiKType?.objectType()
             )
         }
     }
+}
+
+fun String.containsPathParameters(): Boolean {
+    return this.contains("{")
 }
 
 fun Route.buildFullPath(): String {

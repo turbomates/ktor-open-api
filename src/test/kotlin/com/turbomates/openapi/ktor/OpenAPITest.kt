@@ -43,6 +43,19 @@ class OpenAPITest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertContains(response.bodyAsText(), "\"paths\":{\"/test\"")
     }
-
+    @Test
+    fun `query parameters types json`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<TestResponse, TestPrimitiveRequest>("/test") {
+                TestResponse(HttpStatusCode.OK, "test")
+            }
+        }
+        val response = client.get("/openapi.json")
+        val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
+        assertEquals(0, result.messages.count())
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertContains(response.bodyAsText(), "{\"name\":\"body\",\"in\":\"query\"")
+    }
     private data class TestPrimitiveRequest(val body: Double)
 }
