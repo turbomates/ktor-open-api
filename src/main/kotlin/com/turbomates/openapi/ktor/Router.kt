@@ -82,7 +82,8 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPost(
         route.buildFullPath(),
         HttpMethod.Post,
         response = typeOf<TResponse>(),
-        pathParams = typeOf<TParams>()
+        pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
     )
     return route
 }
