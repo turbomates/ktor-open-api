@@ -7,6 +7,9 @@ help:
 gradlew-build: ## Build gradle
 	./gradlew build
 
+test: ## Running tests
+	./gradlew test
+
 gradlew-tasks:
 	./gradlew tasks
 
@@ -27,6 +30,8 @@ detekt-baseline-test: ## Creating/updating baseline for test
 	./gradlew detektBaselineTest
 
 #=======Aliases=======
+
+t: test ## Alias for "test".
 
 gb: gradlew-build ## Alias for "gradlew build".
 
