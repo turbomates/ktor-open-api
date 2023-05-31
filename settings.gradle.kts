@@ -4,12 +4,12 @@ enableFeaturePreview("VERSION_CATALOGS")
 dependencyResolutionManagement {
     versionCatalogs {
         create("deps") {
-            version("ktor", "2.0.2")
+            version("ktor", "2.3.0")
             version("detekt", "1.21.0-RC1")
-            version("kotlin", "1.6.20")
-            version("swagger_webjar", "4.1.3")
-            version("kotlin_serialization_json", "1.3.1")
-            version("openapi_validator", "2.0.33")
+            version("kotlin", "1.8.20")
+            version("swagger_webjar", "4.18.2")
+            version("kotlin_serialization_json", "1.5.1")
+            version("openapi_validator", "2.1.14")
             version("nexus_staging", "0.30.0")
             library("ktor_webjar", "io.ktor", "ktor-server-webjars").versionRef("ktor")
             library("ktor_locations", "io.ktor", "ktor-server-locations").versionRef("ktor")
