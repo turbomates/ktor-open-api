@@ -4,7 +4,17 @@
 Creates OpenApi documentation based on Ktor routing and response return types
 
 # Usage
-WIP
+```kotlin
+post<Response.Either<Response.Data<UUID>, Response.Errors>, RegisterUser>("/register") { command ->
+    // ...
+    command.locale = this.call.resolveLocale()
+    controller<UserController>(this).register(command)
+}
+
+get<Response.Data<Preferences>>("/preferences") {
+    // ...
+}
+```
 
 ## Commands
 See `Makefile`

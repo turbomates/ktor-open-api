@@ -1,0 +1,7 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>UseIfInsteadOfWhen:DescriptionBuilderTest.kt$DescriptionBuilderTest$when { this.isSubtypeOf(typeOf&lt;TestTemplateClass&lt;*&gt;&gt;()) -&gt; mapOf( 400 to typeOf&lt;TestTemplateClass&lt;Any&gt;&gt;() ) else -&gt; mapOf(200 to typeOf&lt;TestTemplateClass&lt;Any&gt;&gt;()) }</ID>
+  </CurrentIssues>
+</SmellBaseline>

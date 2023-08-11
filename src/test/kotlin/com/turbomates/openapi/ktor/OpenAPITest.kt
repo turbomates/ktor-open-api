@@ -8,7 +8,6 @@ import io.swagger.parser.OpenAPIParser
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.time.Duration
 
 class OpenAPITest {
     @Test
@@ -43,6 +42,7 @@ class OpenAPITest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertContains(response.bodyAsText(), "\"paths\":{\"/test\"")
     }
+
     @Test
     fun `query parameters types json`() = testApplication {
         install(OpenAPI)
@@ -57,5 +57,6 @@ class OpenAPITest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertContains(response.bodyAsText(), "{\"name\":\"body\",\"in\":\"query\"")
     }
+
     private data class TestPrimitiveRequest(val body: Double)
 }

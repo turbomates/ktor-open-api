@@ -39,7 +39,7 @@ complexity:
     excludes:
       - '**/test/**'
   ReplaceSafeCallChainWithRun:
-    active: true
+    active: false
   LongParameterList:
     active: false
 
@@ -113,6 +113,8 @@ naming:
   BooleanPropertyNaming:
     active: true
     allowedPattern: '^(is|has|are|should)'
+    excludes:
+      - '**/Components.kt'
   ConstructorParameterNaming:
     active: true
     excludeClassPattern: 'SchemaObject|ParameterObject|SecuritySchemaObject|PathItemObject'
@@ -205,6 +207,8 @@ style:
       - '403'
       - '422'
       - '200'
+    excludes:
+      - '**/test/**'
   NoTabs:
     active: true
   NullableBooleanCheck:

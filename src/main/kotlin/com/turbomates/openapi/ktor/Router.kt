@@ -1,4 +1,4 @@
-@file:Suppress("unused", "OPT_IN_USAGE")
+@file:Suppress("unused")
 
 package com.turbomates.openapi.ktor
 
