@@ -34,9 +34,10 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
-
 tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "17"
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }
 detekt {
     toolVersion = deps.versions.detekt.get()
@@ -51,6 +52,8 @@ tasks.named("check").configure {
 }
 
 java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
     withJavadocJar()
     withSourcesJar()
 }
