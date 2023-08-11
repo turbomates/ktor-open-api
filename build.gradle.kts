@@ -1,17 +1,16 @@
-import io.gitlab.arturbosch.detekt.Detekt
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm").version(deps.versions.kotlin.asProvider().get())
     alias(deps.plugins.kotlin.serialization).version(deps.versions.kotlin.asProvider().get())
     alias(deps.plugins.detekt)
+    alias(deps.plugins.gradle.versions)
     alias(deps.plugins.nexus.release)
     `maven-publish`
     signing
 }
 
 group = "com.github.turbomates"
-version = "0.1.0"
 
 repositories {
     mavenCentral()
@@ -35,15 +34,16 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
-
 tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "1.8"
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }
 detekt {
     toolVersion = deps.versions.detekt.get()
     autoCorrect = false
     parallel = true
-    config = files("detekt.yml")
+    config.setFrom(files("detekt.yml"))
 }
 tasks.named("check").configure {
     this.setDependsOn(this.dependsOn.filterNot {
@@ -52,6 +52,8 @@ tasks.named("check").configure {
 }
 
 java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
     withJavadocJar()
     withSourcesJar()
 }

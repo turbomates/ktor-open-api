@@ -1,16 +1,16 @@
 rootProject.name = "openapi"
 
-enableFeaturePreview("VERSION_CATALOGS")
 dependencyResolutionManagement {
     versionCatalogs {
         create("deps") {
-            version("ktor", "2.3.0")
+            version("ktor", "2.3.3")
             version("detekt", "1.23.1")
-            version("kotlin", "1.8.20")
-            version("swagger_webjar", "4.18.2")
-            version("kotlin_serialization_json", "1.5.1")
-            version("openapi_validator", "2.1.14")
+            version("kotlin", "1.9.0")
+            version("swagger_webjar", "5.3.1")
+            version("kotlin_serialization_json", "1.6.0-RC")
+            version("openapi_validator", "2.1.16")
             version("nexus_staging", "0.30.0")
+            version("gradle_versions", "0.47.0")
             library("ktor_webjar", "io.ktor", "ktor-server-webjars").versionRef("ktor")
             library("ktor_locations", "io.ktor", "ktor-server-locations").versionRef("ktor")
             library("ktor_server_core", "io.ktor", "ktor-server-core").versionRef("ktor")
@@ -23,6 +23,7 @@ dependencyResolutionManagement {
             library("openapi_validator", "io.swagger.parser.v3", "swagger-parser").versionRef("openapi_validator")
             plugin("kotlin_serialization", "org.jetbrains.kotlin.plugin.serialization").versionRef("kotlin")
             plugin("detekt", "io.gitlab.arturbosch.detekt").versionRef("detekt")
+            plugin("gradle_versions", "com.github.ben-manes.versions").versionRef("gradle_versions")
             library("detekt_formatting", "io.gitlab.arturbosch.detekt", "detekt-formatting").versionRef("detekt")
             plugin("nexus_release","io.codearte.nexus-staging").versionRef("nexus_staging")
         }
