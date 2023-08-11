@@ -135,7 +135,9 @@ class OpenApiKType(private val original: KType) {
                 val projectionType = projectionTypes.getOrDefault(memberType.toString(), memberType)
                 if (projectionType != memberType) {
                     buildType(projectionType.jvmErasure.simpleName!!, projectionType)
-                } else buildObjectType(memberType.jvmErasure.simpleName!!, memberType)
+                } else {
+                    buildObjectType(memberType.jvmErasure.simpleName!!, memberType)
+                }
             }
         }
     }

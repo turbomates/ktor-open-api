@@ -13,7 +13,6 @@ import com.turbomates.openapi.spec.ResponseObject
 import com.turbomates.openapi.spec.Root
 import com.turbomates.openapi.spec.SchemaObject
 import kotlinx.serialization.json.JsonElement
-import kotlin.reflect.KClass
 import kotlin.reflect.KType
 
 class OpenAPI(var host: String) {
@@ -99,8 +98,13 @@ class OpenAPI(var host: String) {
 
     private fun Type.toSchemaObject(): SchemaObject {
         return when (this) {
-            is Type.String -> SchemaObject(type = "string", enum = this.values, example = this.example, nullable = this.nullable)
-            is Type.Array -> SchemaObject(type = "array", items = this.type.toSchemaObject(), enum = this.values, nullable = this.nullable)
+            is Type.String -> SchemaObject(type = "string", enum = this.values, example = this.example, nullable = this.isNullable)
+            is Type.Array -> SchemaObject(
+                type = "array",
+                items = this.type.toSchemaObject(),
+                enum = this.values,
+                nullable = this.isNullable
+            )
             is Type.Object ->
                 if (customTypes.containsKey(this.returnType) && this.returnType != null) {
                     customTypes.getValue(this.returnType).toSchemaObject()
@@ -109,12 +113,12 @@ class OpenAPI(var host: String) {
                         type = "object",
                         properties = this.properties.associate { it.name to it.type.toSchemaObject() },
                         example = this.example,
-                        nullable = this.nullable
+                        nullable = this.isNullable
                     )
                 }
 
-            is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.nullable)
-            is Type.Number -> SchemaObject(type = "number", nullable = this.nullable)
+            is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
+            is Type.Number -> SchemaObject(type = "number", nullable = this.isNullable)
         }
     }
 
@@ -147,11 +151,16 @@ enum class INType(val value: String) {
     HEADER("header")
 }
 
-sealed class Type(val nullable: kotlin.Boolean = true) {
+sealed class Type(val isNullable: kotlin.Boolean = true) {
     val isRequired: kotlin.Boolean
-        get() = !nullable
+        get() = !isNullable
 
-    class String(val values: List<kotlin.String>? = null, val example: JsonElement? = null, nullable: kotlin.Boolean = true) : Type(nullable)
+    class String(
+        val values: List<kotlin.String>? = null,
+        val example: JsonElement? = null,
+        nullable: kotlin.Boolean = true
+    ) : Type(nullable)
+
     class Array(val type: Type, val values: List<kotlin.String>? = null, nullable: kotlin.Boolean) : Type(nullable)
     class Object(
         val name: kotlin.String,

@@ -65,6 +65,23 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.post(
     return route
 }
 
+inline fun <reified TResponse : Any> Route.emptyPost(
+    path: String,
+    noinline body: suspend PipelineContext<Unit, ApplicationCall>.() -> TResponse
+): Route {
+    val route = route(path, HttpMethod.Post) {
+        handle {
+            call.respond(body())
+        }
+    }
+    openApi.addToPath(
+        route.buildFullPath(),
+        HttpMethod.Post,
+        response = typeOf<TResponse>(),
+    )
+    return route
+}
+
 inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPost(
     path: String,
     noinline body: suspend PipelineContext<Unit, ApplicationCall>.(TParams) -> TResponse
