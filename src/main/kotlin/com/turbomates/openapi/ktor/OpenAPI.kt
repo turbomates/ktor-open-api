@@ -3,11 +3,14 @@ package com.turbomates.openapi.ktor
 import com.turbomates.openapi.Type
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.BaseApplicationPlugin
 import io.ktor.server.application.call
+import io.ktor.server.application.install
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
+import io.ktor.server.webjars.Webjars
 import io.ktor.util.AttributeKey
 import kotlin.reflect.KType
 import kotlinx.serialization.encodeToString
@@ -34,11 +37,12 @@ class OpenAPI(configuration: Configuration) {
         var documentationBuilder: SwaggerOpenAPI = SwaggerOpenAPI("localhost")
     }
 
-    companion object Plugin : BaseApplicationPlugin<ApplicationCallPipeline, Configuration, OpenAPI> {
+    companion object Plugin : BaseApplicationPlugin<Application, Configuration, OpenAPI> {
         override val key = AttributeKey<OpenAPI>("OpenAPI")
-        override fun install(pipeline: ApplicationCallPipeline, configure: Configuration.() -> Unit): OpenAPI {
+        override fun install(pipeline: Application, configure: Configuration.() -> Unit): OpenAPI {
             val configuration = Configuration().apply(configure)
             val plugin = OpenAPI(configuration)
+            pipeline.install(Webjars)
             configuration.configure(plugin.documentationBuilder)
             configuration.customTypeDescription.forEach {
                 plugin.documentationBuilder.setCustomClassType(it.key, it.value)

@@ -6,7 +6,7 @@ dependencyResolutionManagement {
             version("ktor", "2.3.3")
             version("detekt", "1.23.1")
             version("kotlin", "1.9.0")
-            version("swagger_webjar", "5.3.1")
+            version("swagger_webjar", "5.4.2")
             version("kotlin_serialization_json", "1.6.0-RC")
             version("openapi_validator", "2.1.16")
             version("nexus_staging", "0.30.0")

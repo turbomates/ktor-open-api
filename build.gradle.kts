@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.github.turbomates"
-version = "0.1.0"
+version = "0.1.1"
 
 repositories {
     mavenCentral()
@@ -19,6 +19,8 @@ repositories {
 }
 
 dependencies {
+    implementation("io.ktor:ktor-server-core-jvm:2.3.3")
+    implementation("io.ktor:ktor-server-webjars-jvm:2.3.3")
     testImplementation(kotlin("test"))
     implementation(deps.ktor.server.core)
     implementation(deps.ktor.locations)

@@ -12,13 +12,11 @@ import org.junit.jupiter.api.Disabled
 
 class SwaggerPathTest {
     @Test
-    @Disabled
     fun `swagger replace initial path`() = testApplication {
         install(OpenAPI)
-        install(Webjars)
-        install(SwaggerPath)
-        val response = client.get("/webjars/swagger-ui/index.html?url=/openapi.json")
+        val response = client.get("/webjars/swagger-ui/swagger-initializer.js")
         assertEquals(HttpStatusCode.OK, response.status)
+        println(response.bodyAsText())
         assertContains(response.bodyAsText(), "/openapi.json")
     }
 }
