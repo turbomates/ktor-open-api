@@ -10,7 +10,7 @@ plugins {
     signing
 }
 
-group = "com.github.turbomates"
+group = "com.turbomates"
 version = "0.1.1"
 
 repositories {
