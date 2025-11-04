@@ -25,7 +25,8 @@ class OpenAPI(var host: String) {
         responses: Map<Int, Type> = emptyMap(),
         body: Type.Object? = null,
         pathParams: Type.Object? = null,
-        queryParams: Type.Object? = null
+        queryParams: Type.Object? = null,
+        tags: List<String> = emptyList()
     ) {
         var pathItemObject = root.paths[path]
         if (pathItemObject == null) {
@@ -34,30 +35,43 @@ class OpenAPI(var host: String) {
         }
         val pathParamsObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
         val queryParamsObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
+        val tagsOrNull = tags.takeIf { it.isNotEmpty() }
         when (method) {
             Method.GET ->
-                pathItemObject.get = pathItemObject.get?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
+                pathItemObject.get = pathItemObject.get?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
+                    tags = tagsOrNull,
                     parameters = pathParamsObjects + queryParamsObjects
                 )
 
             Method.POST ->
-                pathItemObject.post = pathItemObject.post?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
+                pathItemObject.post = pathItemObject.post?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
+                    tags = tagsOrNull,
+                    requestBody = body?.toRequestBodyObject(),
+                    parameters = pathParamsObjects + queryParamsObjects
+                )
+
+            Method.PUT ->
+                pathItemObject.put = pathItemObject.put?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
+                    responses.mapValues { it.value.toResponseObject() },
+                    tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
 
             Method.DELETE ->
-                pathItemObject.delete = pathItemObject.delete?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
+                pathItemObject.delete = pathItemObject.delete?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
+                    tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
 
             Method.PATCH ->
-                pathItemObject.patch = pathItemObject.patch?.merge(responses, body, pathParams, queryParams) ?: OperationObject(
+                pathItemObject.patch = pathItemObject.patch?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
+                    tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
                     parameters = pathParamsObjects + queryParamsObjects
                 )
@@ -122,13 +136,14 @@ class OpenAPI(var host: String) {
         }
     }
 
-    enum class Method { GET, POST, DELETE, PATCH }
+    enum class Method { GET, POST, PUT, DELETE, PATCH }
 
     private fun OperationObject.merge(
         responses: Map<Int, Type>,
         body: Type.Object? = null,
         pathParams: Type.Object? = null,
         queryParams: Type.Object? = null,
+        tags: List<String> = emptyList()
     ): OperationObject {
         val pathParameterObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
         val queryParameterObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
@@ -136,7 +151,8 @@ class OpenAPI(var host: String) {
             parameters?.run { plus(pathParameterObjects).plus(queryParameterObjects) } ?: pathParameterObjects.plus(queryParameterObjects)
         val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
         val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
-        return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult)
+        val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
+        return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult, tags = mergedTags)
     }
 }
 

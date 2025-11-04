@@ -14,9 +14,8 @@ class SwaggerPathTest {
     @Test
     fun `swagger replace initial path`() = testApplication {
         install(OpenAPI)
-        val response = client.get("/webjars/swagger-ui/swagger-initializer.js")
+        val response = client.get("/webjars/swagger-ui/5.4.2/swagger-initializer.js")
         assertEquals(HttpStatusCode.OK, response.status)
-        println(response.bodyAsText())
         assertContains(response.bodyAsText(), "/openapi.json")
     }
 }

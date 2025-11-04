@@ -1,10 +1,10 @@
+import java.time.Duration
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm").version(deps.versions.kotlin.asProvider().get())
     alias(deps.plugins.kotlin.serialization).version(deps.versions.kotlin.asProvider().get())
     alias(deps.plugins.detekt)
-    alias(deps.plugins.gradle.versions)
     alias(deps.plugins.nexus.release)
     `maven-publish`
     signing
@@ -15,16 +15,11 @@ version = "0.1.1"
 
 repositories {
     mavenCentral()
-    maven("https://jitpack.io")
 }
 
 dependencies {
-    implementation("io.ktor:ktor-server-core-jvm:2.3.3")
-    implementation("io.ktor:ktor-server-webjars-jvm:2.3.3")
+    implementation(deps.bundles.ktor)
     testImplementation(kotlin("test"))
-    implementation(deps.ktor.server.core)
-    implementation(deps.ktor.locations)
-    implementation(deps.ktor.webjar)
     implementation(deps.kotlin.serialization)
     implementation(deps.kotlin.serialization.json)
     implementation(deps.kotlin.reflect)
@@ -34,12 +29,17 @@ dependencies {
     detektPlugins(deps.detekt.formatting)
 }
 
+// Ensure Kotlin uses JDK 21 toolchain
+kotlin {
+    jvmToolchain(21)
+}
+
 tasks.test {
     useJUnitPlatform()
 }
 tasks.withType<KotlinCompile> {
-    kotlinOptions {
-        jvmTarget = "17"
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
 detekt {
@@ -55,16 +55,90 @@ tasks.named("check").configure {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
     withJavadocJar()
     withSourcesJar()
+    // Ensure all Java-related tasks (including tests) use JDK 21
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+// Explicitly ensure tests run with the configured toolchain JDK
+val javaToolchains = project.extensions.getByType(org.gradle.jvm.toolchain.JavaToolchainService::class.java)
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(21))
+        }
+    )
 }
 
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
+            artifactId = "ktor-open-api"
+            groupId = "com.turbomates"
+            version = System.getenv("RELEASE_VERSION") ?: "0.1.0"
             from(components["java"])
+            pom {
+                packaging = "jar"
+                name.set("Ktor Openapi extensions")
+                url.set("https://github.com/turbomates/ktor-open-api")
+                description.set("Extensions for ktor to generate openapi documentation")
+
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://github.com/turbomates/ktor-open-api/blob/main/LICENSE")
+                    }
+                }
+
+                scm {
+                    connection.set("scm:https://github.com/turbomates/ktor-open-api.git")
+                    developerConnection.set("scm:git@github.com:turbomates/ktor-open-api.git")
+                    url.set("https://github.com/turbomates/ktor-open-api")
+                }
+
+                developers {
+                    developer {
+                        id.set("shustrik")
+                        name.set("Vadim Golodko")
+                        email.set("vadim.golodko@gmail.com")
+                    }
+                }
+            }
         }
     }
+}
+nexusPublishing {
+    repositories {
+        sonatype {
+            // Central Portal OSSRH Staging API URLs
+            nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
+            snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
+
+            username.set(
+                System.getenv("ORG_GRADLE_PROJECT_SONATYPE_USERNAME")
+                    ?: project.findProperty("centralPortalUsername")?.toString()
+            )
+            password.set(
+                System.getenv("ORG_GRADLE_PROJECT_SONATYPE_PASSWORD")
+                    ?: project.findProperty("centralPortalPassword")?.toString()
+            )
+        }
+    }
+
+    // Настройки тайм-аутов (опционально)
+    connectTimeout.set(Duration.ofMinutes(3))
+    clientTimeout.set(Duration.ofMinutes(6))
+
+    transitionCheckOptions {
+        maxRetries.set(80)
+        delayBetween.set(Duration.ofSeconds(10))
+    }
+}
+signing {
+    sign(publishing.publications["mavenJava"])
 }
