@@ -3,9 +3,9 @@ rootProject.name = "openapi"
 dependencyResolutionManagement {
     versionCatalogs {
         create("deps") {
-            version("ktor", "3.3.0")
+            version("ktor", "3.4.3")
             version("detekt", "1.23.1")
-            version("kotlin", "2.2.20")
+            version("kotlin", "2.3.0")
             version("swagger_webjar", "5.30.1")
             version("kotlin_serialization_json", "1.9.0")
             version("openapi_validator", "2.1.35")
@@ -13,6 +13,9 @@ dependencyResolutionManagement {
             library("ktor_webjar", "io.ktor", "ktor-server-webjars").versionRef("ktor")
             library("ktor_locations", "io.ktor", "ktor-server-resources").versionRef("ktor")
             library("ktor_server_core", "io.ktor", "ktor-server-core").versionRef("ktor")
+            library("ktor_server_content_negotiation", "io.ktor", "ktor-server-content-negotiation").versionRef("ktor")
+            library("ktor_serialization_gson", "io.ktor", "ktor-serialization-gson").versionRef("ktor")
+            library("ktor_serialization_kotlinx_json", "io.ktor", "ktor-serialization-kotlinx-json").versionRef("ktor")
             library("ktor_server_core_jvm", "io.ktor", "ktor-server-core-jvm").versionRef("ktor")
             library("ktor_server_core_webjars_jvm", "io.ktor", "ktor-server-webjars-jvm").versionRef("ktor")
             library("ktor_test", "io.ktor", "ktor-server-test-host").versionRef("ktor")
@@ -33,8 +36,11 @@ dependencyResolutionManagement {
                     "ktor_server_core_jvm",
                     "ktor_server_core_webjars_jvm",
                     "ktor_locations",
-                    "ktor_webjar"
-                )
+                "ktor_server_content_negotiation",
+                "ktor_serialization_gson",
+                "ktor_serialization_kotlinx_json",
+                "ktor_webjar"
+            )
             )
         }
     }

@@ -19,11 +19,11 @@ repositories {
 
 dependencies {
     implementation(deps.bundles.ktor)
-    testImplementation(kotlin("test"))
     implementation(deps.kotlin.serialization)
     implementation(deps.kotlin.serialization.json)
     implementation(deps.kotlin.reflect)
     implementation(deps.swagger.webjar)
+    testImplementation(kotlin("test"))
     testImplementation(deps.ktor.test)
     testImplementation(deps.openapi.validator)
     detektPlugins(deps.detekt.formatting)
