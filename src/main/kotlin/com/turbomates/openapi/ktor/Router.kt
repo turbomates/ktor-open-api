@@ -5,8 +5,13 @@ package com.turbomates.openapi.ktor
 import com.turbomates.openapi.openApiKType
 import io.ktor.http.HttpMethod
 import io.ktor.server.application.plugin
+import io.ktor.server.routing.OpenApiRoutePathFormat
+import io.ktor.server.routing.PathSegmentTailcardRouteSelector
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.RoutePathComponent
+import io.ktor.server.routing.RoutePathFormat
 import io.ktor.server.routing.application
+import io.ktor.server.routing.path
 import kotlin.reflect.KType
 
 fun OpenAPI.addToPath(
@@ -35,8 +40,28 @@ fun String.containsPathParameters(): Boolean {
     return this.contains("{")
 }
 
+/**
+ * Full path of the route as an OpenAPI path template.
+ *
+ * Ktor's path syntax is richer than OpenAPI's, so it is normalized: an optional parameter (`{id?}`)
+ * becomes a regular `{id}`, since OpenAPI has no optional path parameters and the route does match
+ * with the segment present; a tailcard (`{path...}`) keeps its name instead of the `{**}`
+ * placeholder, so that the variable can be documented as a parameter. A trailing slash is dropped —
+ * Ktor matches the path with and without it, and OpenAPI would treat the two forms as different
+ * paths.
+ */
 fun Route.buildFullPath(): String {
-    return toString().replace(Regex("/\\(.*?\\)"), "")
+    val path = path(OpenApiPathFormat)
+    return if (path.length > 1) path.removeSuffix("/") else path
+}
+
+private object OpenApiPathFormat : RoutePathFormat {
+    override fun format(component: RoutePathComponent): String {
+        if (component is PathSegmentTailcardRouteSelector && component.name.isNotEmpty()) {
+            return "{${component.name}}"
+        }
+        return OpenApiRoutePathFormat.format(component)
+    }
 }
 
 val Route.openApi: OpenAPI
