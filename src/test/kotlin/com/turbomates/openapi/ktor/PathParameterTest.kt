@@ -116,6 +116,50 @@ class PathParameterTest {
         assertContains(response, expected)
     }
 
+    @Test
+    fun `query parameter of a templated path stays in query`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<TestResponse, TestNullableQueryParams>("/mixed/{id}") { TestResponse(true) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        assertContains(response, "\"name\":\"query\",\"in\":\"query\"")
+        assertContains(response, "\"name\":\"id\",\"in\":\"path\"")
+    }
+
+    @Test
+    fun `params type is split between path and query by name`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<TestResponse, TestMixedParams>("/mixed/{id}") { TestResponse(true) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        assertContains(response, "{\"name\":\"id\",\"in\":\"path\",\"required\":true,\"schema\":{\"nullable\":false,\"type\":\"string\"}}")
+        val query = "{\"name\":\"query\",\"in\":\"query\",\"required\":false," +
+            "\"schema\":{\"nullable\":true,\"type\":\"string\"}}"
+        assertContains(response, query)
+    }
+
+    @Test
+    fun `explicitly separated path and query params keep their place`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<TestResponse, TestNullableQueryParams, TestPathParams>("/mixed/{id}") { _, _ -> TestResponse(true) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        assertContains(response, "\"name\":\"id\",\"in\":\"path\"")
+        assertContains(response, "\"name\":\"query\",\"in\":\"query\"")
+    }
+
     @Serializable
     data class TestResponse(val done: Boolean)
 
@@ -125,4 +169,6 @@ class PathParameterTest {
     data class TestNullablePathParams(val id: UUID?)
 
     data class TestNullableQueryParams(val query: String?)
+
+    data class TestMixedParams(val id: String, val query: String?)
 }

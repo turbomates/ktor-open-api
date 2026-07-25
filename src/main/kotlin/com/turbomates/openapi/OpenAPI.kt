@@ -33,48 +33,48 @@ class OpenAPI(var host: String) {
             pathItemObject = PathItemObject()
             root.paths[path] = pathItemObject
         }
-        val pathParamsObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
-        val queryParamsObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
+        val (pathParamsObjects, queryParamsObjects) = classifyParameters(path, pathParams, queryParams)
+        val declaredParameters = pathParamsObjects + queryParamsObjects
         pathItemObject.documentPathTemplate(path, pathParamsObjects)
         val tagsOrNull = tags.takeIf { it.isNotEmpty() }
         when (method) {
             Method.GET ->
-                pathItemObject.get = pathItemObject.get?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
+                pathItemObject.get = pathItemObject.get?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     tags = tagsOrNull,
-                    parameters = pathParamsObjects + queryParamsObjects
+                    parameters = declaredParameters
                 )
 
             Method.POST ->
-                pathItemObject.post = pathItemObject.post?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
+                pathItemObject.post = pathItemObject.post?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
-                    parameters = pathParamsObjects + queryParamsObjects
+                    parameters = declaredParameters
                 )
 
             Method.PUT ->
-                pathItemObject.put = pathItemObject.put?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
+                pathItemObject.put = pathItemObject.put?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
-                    parameters = pathParamsObjects + queryParamsObjects
+                    parameters = declaredParameters
                 )
 
             Method.DELETE ->
-                pathItemObject.delete = pathItemObject.delete?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
+                pathItemObject.delete = pathItemObject.delete?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
-                    parameters = pathParamsObjects + queryParamsObjects
+                    parameters = declaredParameters
                 )
 
             Method.PATCH ->
-                pathItemObject.patch = pathItemObject.patch?.merge(responses, body, pathParams, queryParams, tags) ?: OperationObject(
+                pathItemObject.patch = pathItemObject.patch?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
                     responses.mapValues { it.value.toResponseObject() },
                     tags = tagsOrNull,
                     requestBody = body?.toRequestBodyObject(),
-                    parameters = pathParamsObjects + queryParamsObjects
+                    parameters = declaredParameters
                 )
         }
     }
@@ -104,10 +104,30 @@ class OpenAPI(var host: String) {
         )
     }
 
+    /**
+     * Splits the parameters of an operation into path and query ones by name.
+     *
+     * A property describes a path parameter when its name is a variable of the path template, and a
+     * query parameter otherwise — the shape of the path says nothing about the properties that come
+     * with it, so a filter passed alongside a templated path stays in the query where it belongs.
+     * A name can only mean one thing per operation, so it is described once even when both
+     * [pathParams] and [queryParams] mention it.
+     */
+    private fun classifyParameters(
+        path: String,
+        pathParams: Type.Object?,
+        queryParams: Type.Object?
+    ): Pair<List<ParameterObject>, List<ParameterObject>> {
+        val templateVariables = path.pathTemplateVariables().toSet()
+        val declared = (pathParams?.properties.orEmpty() + queryParams?.properties.orEmpty()).distinctBy { it.name }
+        val (inPath, inQuery) = declared.partition { templateVariables.contains(it.name) }
+        return inPath.toParameterObject(INType.PATH) to inQuery.toParameterObject(INType.QUERY)
+    }
+
     @Suppress("FunctionParameterNaming", "UnusedPrivateMember")
-    private fun Type.Object.toParameterObject(`in`: INType): List<ParameterObject> {
+    private fun List<Property>.toParameterObject(`in`: INType): List<ParameterObject> {
         val isPath = `in` == INType.PATH
-        return properties.map {
+        return map {
             // A path parameter is part of the URL, so it can be neither optional nor null,
             // whatever the nullability of the property describing it.
             val schema = it.type.toSchemaObject().let { schema -> if (isPath) schema.copy(nullable = false) else schema }
@@ -175,14 +195,10 @@ class OpenAPI(var host: String) {
     private fun OperationObject.merge(
         responses: Map<Int, Type>,
         body: Type.Object? = null,
-        pathParams: Type.Object? = null,
-        queryParams: Type.Object? = null,
+        declaredParameters: List<ParameterObject> = emptyList(),
         tags: List<String> = emptyList()
     ): OperationObject {
-        val pathParameterObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
-        val queryParameterObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
-        val parameters: List<ParameterObject> =
-            parameters?.run { plus(pathParameterObjects).plus(queryParameterObjects) } ?: pathParameterObjects.plus(queryParameterObjects)
+        val parameters: List<ParameterObject> = parameters?.plus(declaredParameters) ?: declaredParameters
         val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
         val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
         val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
