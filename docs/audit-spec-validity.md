@@ -35,7 +35,7 @@ path-параметров. Практически всё за пределами
 | B2 | крэш | `List<T>`/`String` в ответе → `InvalidTypeForOpenApiType` | — |
 | B3 | крэш | value class / enum в ответе → `ClassCastException` | — |
 | B4 | крэш | Raw-генерики и `List<*>` → `NullPointerException` | — |
-| B5 | крэш | `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException` | — |
+| B5 | ✅ исправлено | `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException` | — |
 | C1 | неверно | Нет `required` — все поля схемы опциональны | — |
 | C2 | неверно | `Int`/`Long` → `number`, `format` отсутствует в модели вовсе | — |
 | C3 | неверно | `Map<K,V>` → `properties: {"String": ...}` вместо `additionalProperties` | — |
@@ -407,7 +407,7 @@ data class WithStar(val anything: List<*>)      // NPE
 
 Аналогичные `!!` есть в ветке коллекций (`OpenApiKType.kt:93`) и map (`:110`, `:112`).
 
-### B5. `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException`
+### B5. `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException` — ✅ исправлено
 
 `Router.kt:24`: `com.turbomates.openapi.OpenAPI.Method.valueOf(method.value)`. В enum только
 `GET, POST, PUT, DELETE, PATCH`:
@@ -420,6 +420,24 @@ IllegalArgumentException: No enum constant com.turbomates.openapi.OpenAPI.Method
 Публичный `addToPath` принимает любой `HttpMethod`, так что уронить его легко. **Нужно**: добавить
 `HEAD`/`OPTIONS`/`TRACE` в enum (`PathItemObject` их уже поддерживает) и не падать на неизвестном
 методе.
+
+**Сделано**: в `Method` добавлены `HEAD`, `OPTIONS`, `TRACE` и разложены по соответствующим полям
+`PathItemObject`. `Router.addToPath` вместо `Method.valueOf(method.value)` ищет метод по имени без
+учёта регистра и, если такого в OpenAPI нет, просто не документирует роут — `HttpMethod` открытый
+тип, зарегистрировать роут можно на что угодно, а падать при регистрации из-за этого не за что.
+Заодно перестал падать метод в нижнем регистре (`HttpMethod("delete")`).
+
+Восьмикратный `when` по методам свёрнут: раньше это были пять почти одинаковых блоков по шесть
+строк, теперь по строке на метод плюс общий `mergeOrCreate`. Тело запроса, как и раньше,
+описывается только у методов, которые его несут; `HEAD`/`OPTIONS`/`TRACE` попали в ту же группу,
+что `GET`.
+
+DSL-функций `head`/`options`/`trace` по-прежнему нет — задокументировать такой роут можно через
+публичный `addToPath`. Заводить под них overload'ы — это уже DSL, а не валидность (ближе к C11).
+
+Тесты: `HttpMethodTest` — три метода документируются и валидируются, неизвестный метод (`LINK`)
+не ломает регистрацию и не попадает в спеку, метод в нижнем регистре распознаётся,
+`HEAD`/`OPTIONS` не получают `requestBody`.
 
 ---
 
@@ -592,7 +610,7 @@ overload'ах.
 2. **Нормализация шаблонов** `{id?}` / `{param...}` (A4). — ✅ сделано.
 3. **`paths` всегда в выхлопе** (A5) — одна аннотация. — ✅ сделано.
 4. **Дедупликация параметров при merge** (A6). — ✅ сделано.
-5. **`HEAD`/`OPTIONS`/`TRACE` в `Method`** и отсутствие падения на неизвестном методе (B5).
+5. **`HEAD`/`OPTIONS`/`TRACE` в `Method`** и отсутствие падения на неизвестном методе (B5). — ✅ сделано.
 
 ### Этап 2 — убрать крэши
 

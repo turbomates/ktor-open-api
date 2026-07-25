@@ -37,45 +37,27 @@ class OpenAPI(var host: String) {
         val declaredParameters = pathParamsObjects + queryParamsObjects
         pathItemObject.documentPathTemplate(path, pathParamsObjects)
         val tagsOrNull = tags.takeIf { it.isNotEmpty() }
+
+        // A request body is only described for the methods that carry one; the rest keep the shape
+        // they had before HEAD, OPTIONS and TRACE joined the enum.
+        fun OperationObject?.mergeOrCreate(documentsBody: Boolean = true): OperationObject {
+            return this?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
+                responses.mapValues { it.value.toResponseObject() },
+                tags = tagsOrNull,
+                requestBody = body?.toRequestBodyObject().takeIf { documentsBody },
+                parameters = declaredParameters
+            )
+        }
+
         when (method) {
-            Method.GET ->
-                pathItemObject.get = pathItemObject.get?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
-                    responses.mapValues { it.value.toResponseObject() },
-                    tags = tagsOrNull,
-                    parameters = declaredParameters
-                )
-
-            Method.POST ->
-                pathItemObject.post = pathItemObject.post?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
-                    responses.mapValues { it.value.toResponseObject() },
-                    tags = tagsOrNull,
-                    requestBody = body?.toRequestBodyObject(),
-                    parameters = declaredParameters
-                )
-
-            Method.PUT ->
-                pathItemObject.put = pathItemObject.put?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
-                    responses.mapValues { it.value.toResponseObject() },
-                    tags = tagsOrNull,
-                    requestBody = body?.toRequestBodyObject(),
-                    parameters = declaredParameters
-                )
-
-            Method.DELETE ->
-                pathItemObject.delete = pathItemObject.delete?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
-                    responses.mapValues { it.value.toResponseObject() },
-                    tags = tagsOrNull,
-                    requestBody = body?.toRequestBodyObject(),
-                    parameters = declaredParameters
-                )
-
-            Method.PATCH ->
-                pathItemObject.patch = pathItemObject.patch?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
-                    responses.mapValues { it.value.toResponseObject() },
-                    tags = tagsOrNull,
-                    requestBody = body?.toRequestBodyObject(),
-                    parameters = declaredParameters
-                )
+            Method.GET -> pathItemObject.get = pathItemObject.get.mergeOrCreate(documentsBody = false)
+            Method.HEAD -> pathItemObject.head = pathItemObject.head.mergeOrCreate(documentsBody = false)
+            Method.OPTIONS -> pathItemObject.options = pathItemObject.options.mergeOrCreate(documentsBody = false)
+            Method.TRACE -> pathItemObject.trace = pathItemObject.trace.mergeOrCreate(documentsBody = false)
+            Method.POST -> pathItemObject.post = pathItemObject.post.mergeOrCreate()
+            Method.PUT -> pathItemObject.put = pathItemObject.put.mergeOrCreate()
+            Method.PATCH -> pathItemObject.patch = pathItemObject.patch.mergeOrCreate()
+            Method.DELETE -> pathItemObject.delete = pathItemObject.delete.mergeOrCreate()
         }
     }
 
@@ -161,7 +143,8 @@ class OpenAPI(var host: String) {
         }
     }
 
-    enum class Method { GET, POST, PUT, DELETE, PATCH }
+    /** Methods a path item can describe. */
+    enum class Method { GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE }
 
     /**
      * Describes every variable of the path template as a path item parameter.

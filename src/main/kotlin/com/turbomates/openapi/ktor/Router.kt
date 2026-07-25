@@ -13,6 +13,7 @@ import io.ktor.server.routing.RoutePathFormat
 import io.ktor.server.routing.application
 import io.ktor.server.routing.path
 import kotlin.reflect.KType
+import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI
 
 fun OpenAPI.addToPath(
     path: String,
@@ -23,10 +24,11 @@ fun OpenAPI.addToPath(
     queryParams: KType? = null
 ) {
     extendDocumentation { responseMap ->
-        if (response != null) {
+        val documentedMethod = method.documentedMethod()
+        if (response != null && documentedMethod != null) {
             addToPath(
                 path,
-                com.turbomates.openapi.OpenAPI.Method.valueOf(method.value),
+                documentedMethod,
                 response.run { responseMap(this).mapValues { it.value.openApiKType.objectType() } },
                 body?.openApiKType?.objectType(),
                 pathParams?.openApiKType?.objectType(),
@@ -34,6 +36,16 @@ fun OpenAPI.addToPath(
             )
         }
     }
+}
+
+/**
+ * OpenAPI counterpart of a Ktor method, or `null` when a path item cannot describe it.
+ *
+ * `HttpMethod` is open — a route may be registered for anything, including a method OpenAPI has no
+ * place for. Such a route is left out of the documentation instead of failing the registration.
+ */
+private fun HttpMethod.documentedMethod(): SwaggerOpenAPI.Method? {
+    return SwaggerOpenAPI.Method.entries.find { it.name.equals(value, ignoreCase = true) }
 }
 
 fun String.containsPathParameters(): Boolean {
