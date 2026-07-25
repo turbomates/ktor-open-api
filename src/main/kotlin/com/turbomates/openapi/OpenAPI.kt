@@ -106,8 +106,12 @@ class OpenAPI(var host: String) {
 
     @Suppress("FunctionParameterNaming", "UnusedPrivateMember")
     private fun Type.Object.toParameterObject(`in`: INType): List<ParameterObject> {
+        val isPath = `in` == INType.PATH
         return properties.map {
-            ParameterObject(it.name, schema = it.type.toSchemaObject(), required = it.type.isRequired, `in` = `in`.value)
+            // A path parameter is part of the URL, so it can be neither optional nor null,
+            // whatever the nullability of the property describing it.
+            val schema = it.type.toSchemaObject().let { schema -> if (isPath) schema.copy(nullable = false) else schema }
+            ParameterObject(it.name, schema = schema, required = isPath || it.type.isRequired, `in` = `in`.value)
         }
     }
 

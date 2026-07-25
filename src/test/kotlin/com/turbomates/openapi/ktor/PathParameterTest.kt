@@ -7,6 +7,7 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -87,9 +88,41 @@ class PathParameterTest {
         assertEquals(1, Regex("\"name\":\"id\"").findAll(response).count())
     }
 
+    @Test
+    fun `nullable path parameter is required`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<TestResponse, TestNullablePathParams>("/users/{id}") { TestResponse(true) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        assertContains(response, "{\"name\":\"id\",\"in\":\"path\",\"required\":true,\"schema\":{\"nullable\":false,\"type\":\"string\"}}")
+    }
+
+    @Test
+    fun `nullable query parameter stays optional`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<TestResponse, TestNullableQueryParams>("/users") { TestResponse(true) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        val expected = "{\"name\":\"query\",\"in\":\"query\",\"required\":false," +
+            "\"schema\":{\"nullable\":true,\"type\":\"string\"}}"
+        assertContains(response, expected)
+    }
+
     @Serializable
     data class TestResponse(val done: Boolean)
 
     @Serializable
     data class TestPathParams(val id: String)
+
+    data class TestNullablePathParams(val id: UUID?)
+
+    data class TestNullableQueryParams(val query: String?)
 }

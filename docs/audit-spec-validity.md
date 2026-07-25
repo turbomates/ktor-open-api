@@ -22,7 +22,7 @@ path-параметров. Практически всё за пределами
 | # | Категория | Находка | Валидатор |
 |---|---|---|---|
 | A1 | ✅ исправлено | Path-параметры не документируются, если не использован overload с `TParams` | ошибка |
-| A2 | невалидно | Nullable path-параметр даёт `required: false` | ошибка |
+| A2 | ✅ исправлено | Nullable path-параметр даёт `required: false` | ошибка |
 | A3 | невалидно | Query-параметры попадают в `in: path` из-за эвристики по `{` | 2 ошибки |
 | A4 | невалидно | Шаблоны `{id?}`, `{path...}` уходят в спеку как есть, имя tailcard теряется | ошибка |
 | A5 | невалидно | Пустой `paths` вообще не сериализуется | ошибка |
@@ -106,7 +106,7 @@ paths.'/regex/{id}'. Declared path parameter id needs to be defined as a path pa
 `get<T>(path)`), вложенные `route`-блоки с двумя переменными, отсутствие дублей при объявленном
 `TParams` и при повторной регистрации. Каждый проверяет `OpenAPIParser(...).messages` на пустоту.
 
-### A2. Nullable path-параметр даёт `required: false`
+### A2. Nullable path-параметр даёт `required: false` — ✅ исправлено
 
 `toParameterObject` (`OpenAPI.kt:107`) выводит `required` из nullability типа:
 `required = it.type.isRequired`. Для `in: path` спецификация требует `required: true` **всегда**.
@@ -122,6 +122,20 @@ paths.For path parameter id the required value should be true
 ```
 
 **Нужно**: для `INType.PATH` жёстко ставить `required = true`.
+
+**Сделано**: `toParameterObject` (`OpenAPI.kt`) для `INType.PATH` ставит `required = true`
+независимо от nullability свойства. Заодно у path-параметра снимается `nullable` в схеме:
+`required: true` вместе с `nullable: true` — самопротиворечивое описание, а значение path-параметра
+приходит куском URL и `null` быть не может. Query- и header-параметры не затронуты: там
+nullability по-прежнему определяет `required`.
+
+```json
+"parameters":[{"name":"id","in":"path","required":true,"schema":{"nullable":false,"type":"string"}}]
+```
+
+Тесты: `PathParameterTest` — nullable path-параметр (`UUID?`) даёт `required: true` и
+`nullable: false`; nullable query-параметр остаётся `required: false` / `nullable: true`
+(регрессионная страховка на то, что правка не задела query).
 
 ### A3. Query-параметры классифицируются как path
 
@@ -486,8 +500,7 @@ overload'ах.
 
 1. **Path-параметры из шаблона пути** — парсить `{...}` из `buildFullPath()`, добавлять
    недостающие, `required: true` всегда, размещение определять по имени, а не по наличию `{`
-   в пути. Закрывает A1, A2, A3. — A1 сделан (недостающие добавляются); A2 (`required: true` для
-   уже описанных) и A3 (размещение по имени) остаются.
+   в пути. Закрывает A1, A2, A3. — A1 и A2 сделаны; A3 (размещение по имени) остаётся.
 2. **Нормализация шаблонов** `{id?}` / `{param...}` (A4).
 3. **`paths` всегда в выхлопе** (A5) — одна аннотация.
 4. **Дедупликация параметров при merge** (A6).
