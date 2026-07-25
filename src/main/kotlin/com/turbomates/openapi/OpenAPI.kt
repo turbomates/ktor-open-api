@@ -35,6 +35,7 @@ class OpenAPI(var host: String) {
         }
         val pathParamsObjects = pathParams?.toParameterObject(INType.PATH).orEmpty()
         val queryParamsObjects = queryParams?.toParameterObject(INType.QUERY).orEmpty()
+        pathItemObject.documentPathTemplate(path, pathParamsObjects)
         val tagsOrNull = tags.takeIf { it.isNotEmpty() }
         when (method) {
             Method.GET ->
@@ -137,6 +138,35 @@ class OpenAPI(var host: String) {
     }
 
     enum class Method { GET, POST, PUT, DELETE, PATCH }
+
+    /**
+     * Describes every variable of the path template as a path item parameter.
+     *
+     * OpenAPI requires each path template variable to be documented with `in: path`, while the
+     * routing DSL only knows about the ones the caller passed explicitly through `pathParams`.
+     * Variables missing from [operationParameters] are documented as required strings on the path
+     * item, so that the spec stays valid no matter which overload was used.
+     */
+    private fun PathItemObject.documentPathTemplate(path: String, operationParameters: List<ParameterObject>) {
+        val documented = parameters.orEmpty()
+        val documentedNames = (documented + operationParameters)
+            .filter { it.`in` == INType.PATH.value }
+            .map { it.name }
+            .toSet()
+        val missing = path.pathTemplateVariables()
+            .filterNot { documentedNames.contains(it) }
+            .map { name ->
+                ParameterObject(
+                    name,
+                    schema = SchemaObject(type = "string", nullable = false),
+                    required = true,
+                    `in` = INType.PATH.value
+                )
+            }
+        if (missing.isNotEmpty()) {
+            parameters = documented + missing
+        }
+    }
 
     private fun OperationObject.merge(
         responses: Map<Int, Type>,
