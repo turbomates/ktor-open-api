@@ -198,7 +198,12 @@ class OpenAPI(var host: String) {
         declaredParameters: List<ParameterObject> = emptyList(),
         tags: List<String> = emptyList()
     ): OperationObject {
-        val parameters: List<ParameterObject> = parameters?.plus(declaredParameters) ?: declaredParameters
+        // A parameter is identified by its name and location, and an operation may not list the same
+        // one twice — registering a path and a method again describes the same parameter, not a new
+        // one. The description already in the operation wins.
+        val parameters: List<ParameterObject> = parameters?.plus(declaredParameters)
+            ?.distinctBy { it.name to it.`in` }
+            ?: declaredParameters
         val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
         val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
         val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
