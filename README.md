@@ -287,6 +287,24 @@ endpoints is written once. `@SerialName`, `@Transient`, property order and defau
 from the `kotlinx.serialization` descriptor of the type, so the schema describes what is actually
 written; a type that is not `@Serializable` is described by reflection instead.
 
+#### Properties the request does not carry
+
+A request type often has a property the handler fills in after the body was read — a locale, a
+principal. Mark it `@Transient`: `kotlinx` neither reads nor writes it, and the schema leaves it out.
+
+```kotlin
+@Serializable
+data class RegisterUser(val email: String) {
+    @Transient
+    lateinit var locale: Locale
+}
+```
+
+`lateinit` alone says that only for a type that is not `@Serializable`, where reflection is all
+there is to go by. In a `@Serializable` type a `lateinit var` is an element of the serializer like
+any other — `call.receive()` fails with `MissingFieldException` when the key is missing — so it is
+described as a required property, because that is what the endpoint accepts.
+
 #### Complex Types
 
 ```kotlin

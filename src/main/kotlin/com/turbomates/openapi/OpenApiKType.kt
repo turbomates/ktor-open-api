@@ -166,12 +166,20 @@ class OpenApiKType(private val original: KType) {
      * in alphabetical order under its Kotlin name.
      *
      * A type without a serializer — one that is not `@Serializable` — is still described by
-     * reflection, since that is all there is to go by.
+     * reflection, since that is all there is to go by. There a `lateinit` property is left out: it
+     * has no value until something sets one, which for a request type happens after the body was
+     * read, from the call rather than from the client.
+     *
+     * That guess only holds where there is nothing better to go by. A `lateinit var` of a
+     * `@Serializable` type is an element of its serializer like any other, and `kotlinx` refuses a
+     * body without it — leaving it out of the schema would document a request the server rejects.
+     * Marking it `@Transient` is what says a property is filled in later, and the serializer
+     * reports that on its own.
      */
     private fun KType.objectProperties(): List<Property> {
-        val properties = jvmErasure.memberProperties.filterNot { it.isLateinit }
+        val properties = jvmErasure.memberProperties
         val descriptor = serialDescriptor()?.takeIf { it.kind is StructureKind }
-            ?: return properties.map { property ->
+            ?: return properties.filterNot { it.isLateinit }.map { property ->
                 Property(property.name, buildType(property.returnType))
             }
         val bySerialName = properties.associateBy { it.findAnnotation<SerialName>()?.value ?: it.name }
