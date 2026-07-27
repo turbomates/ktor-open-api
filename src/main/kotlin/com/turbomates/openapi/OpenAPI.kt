@@ -139,7 +139,13 @@ class OpenAPI(var host: String) {
 
     private fun Type.toSchemaObject(): SchemaObject {
         return when (this) {
-            is Type.String -> SchemaObject(type = "string", enum = this.values, example = this.example, nullable = this.isNullable)
+            is Type.String -> SchemaObject(
+                type = "string",
+                format = this.format,
+                enum = this.values,
+                example = this.example,
+                nullable = this.isNullable
+            )
             is Type.Array -> SchemaObject(
                 type = "array",
                 items = this.type.toSchemaObject(),
@@ -158,7 +164,8 @@ class OpenAPI(var host: String) {
 
             is Type.Ref -> referenceSchemaObject(componentName(this.returnType), this.isNullable)
             is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
-            is Type.Number -> SchemaObject(type = "number", nullable = this.isNullable)
+            is Type.Number -> SchemaObject(type = "number", format = this.format, nullable = this.isNullable)
+            is Type.Integer -> SchemaObject(type = "integer", format = this.format, nullable = this.isNullable)
             // An empty schema is how OpenAPI describes a value it knows nothing about.
             is Type.Any -> SchemaObject(nullable = this.isNullable)
         }
@@ -319,7 +326,8 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
     class String(
         val values: List<kotlin.String>? = null,
         val example: JsonElement? = null,
-        nullable: kotlin.Boolean = true
+        nullable: kotlin.Boolean = true,
+        val format: kotlin.String? = null
     ) : Type(nullable)
 
     class Array(val type: Type, val values: List<kotlin.String>? = null, nullable: kotlin.Boolean) : Type(nullable)
@@ -345,8 +353,31 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
     ) : Type(nullable)
 
     class Boolean(nullable: kotlin.Boolean) : Type(nullable)
-    class Number(nullable: kotlin.Boolean) : Type(nullable)
+    class Number(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
+
+    /** A whole number, which OpenAPI keeps apart from `number`. */
+    class Integer(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
 
     /** A value nothing is known about — an unresolved type parameter or a star projection. */
     class Any(nullable: kotlin.Boolean = true) : Type(nullable)
+}
+
+/**
+ * Formats this library describes types with.
+ *
+ * `format` is an open string in OpenAPI: these are the ones that are generated on their own, and
+ * any other may be given through `customTypeDescription`.
+ */
+object Format {
+    const val INT32 = "int32"
+    const val INT64 = "int64"
+    const val FLOAT = "float"
+    const val DOUBLE = "double"
+    const val UUID = "uuid"
+    const val DATE = "date"
+    const val DATE_TIME = "date-time"
+    const val TIME = "time"
+    const val DURATION = "duration"
+    const val BINARY = "binary"
+    const val URI = "uri"
 }

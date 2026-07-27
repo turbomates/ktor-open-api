@@ -3,11 +3,13 @@
 
 package com.turbomates.openapi
 
+import java.math.BigInteger
 import java.util.Locale
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
 import kotlin.reflect.KTypeParameter
+import kotlin.reflect.full.createType
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
@@ -18,6 +20,7 @@ import kotlin.reflect.typeOf
 import kotlin.time.Duration
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.serializerOrNull
@@ -39,13 +42,53 @@ class OpenApiKType(private val original: KType) {
             return when {
                 isSubtypeOf(typeOf<String?>()) -> Type.String(nullable = isMarkedNullable)
                 isSubtypeOf(typeOf<Locale?>()) -> Type.String(nullable = isMarkedNullable)
-                isSubtypeOf(typeOf<UUID?>()) -> Type.String(nullable = isMarkedNullable)
-                isSubtypeOf(typeOf<Number?>()) -> Type.Number(isMarkedNullable)
+                isSubtypeOf(typeOf<UUID?>()) -> Type.String(nullable = isMarkedNullable, format = Format.UUID)
                 isSubtypeOf(typeOf<Boolean?>()) -> Type.Boolean(isMarkedNullable)
-                isSubtypeOf(typeOf<Duration?>()) -> Type.String(nullable = isMarkedNullable)
+                isSubtypeOf(typeOf<Duration?>()) -> Type.String(nullable = isMarkedNullable, format = Format.DURATION)
+                isSubtypeOf(typeOf<Number?>()) -> numberType()
                 else -> throw UnhandledTypeException(jvmErasure.simpleName ?: toString())
             }
         }
+
+    /**
+     * A whole number is `integer` rather than `number`, and both say how wide they are.
+     *
+     * Every `Number` used to be a `number`, so a code generator had no way of telling an `Int` from
+     * a `Double` and produced floating point fields for identifiers and counts alike.
+     */
+    private fun KType.numberType(): Type {
+        return when {
+            isSubtypeOf(typeOf<Int?>()) || isSubtypeOf(typeOf<Short?>()) || isSubtypeOf(typeOf<Byte?>()) ->
+                Type.Integer(isMarkedNullable, Format.INT32)
+            isSubtypeOf(typeOf<Long?>()) -> Type.Integer(isMarkedNullable, Format.INT64)
+            isSubtypeOf(typeOf<BigInteger?>()) -> Type.Integer(isMarkedNullable)
+            isSubtypeOf(typeOf<Float?>()) -> Type.Number(isMarkedNullable, Format.FLOAT)
+            isSubtypeOf(typeOf<Double?>()) -> Type.Number(isMarkedNullable, Format.DOUBLE)
+            else -> Type.Number(isMarkedNullable)
+        }
+    }
+
+    /**
+     * Description of a type that carries a value rather than a structure — a date, a byte array,
+     * a URI.
+     *
+     * None of these is a primitive as far as reflection goes, so each used to be taken apart into
+     * its own internals: a `LocalDate` was described as an object of `year`, `month` and `day`,
+     * which is nothing a serializer ever writes. They are matched by name so that types from
+     * libraries that may not be on the classpath — `kotlinx.datetime` — are covered as well.
+     */
+    private fun KType.builtInType(): Type? {
+        val qualifiedName = jvmErasure.qualifiedName ?: return null
+        BUILT_IN_FORMATS[qualifiedName]?.let {
+            return Type.String(nullable = isMarkedNullable, format = it.takeIf(kotlin.String::isNotEmpty))
+        }
+        // Everything else from `java.time` is written as a string of some shape, which is still
+        // closer to the truth than the fields the class happens to have.
+        if (qualifiedName.startsWith(JAVA_TIME_PACKAGE)) {
+            return Type.String(nullable = isMarkedNullable)
+        }
+        return null
+    }
 
     /**
      * Actual types behind the generic parameters of [type].
@@ -130,15 +173,37 @@ class OpenApiKType(private val original: KType) {
         return (0 until descriptor.elementsCount).mapNotNull { index ->
             val serialName = descriptor.getElementName(index)
             val property = bySerialName[serialName] ?: return@mapNotNull null
+            val described = buildType(property.returnType)
             Property(
                 serialName,
-                buildType(property.returnType),
+                descriptor.getElementDescriptor(index)
+                    .takeIf { described is Type.Object }
+                    ?.serializedAsPrimitive(property.returnType.isMarkedNullable)
+                    ?: described,
                 // A property is required when the key has to be there — that is, when the
                 // serializer has no default to fall back on. A nullable one is left optional even
                 // so: `nullable: true` already says a value may be missing in every sense a client
                 // cares about, and demanding an explicit `null` in the body helps nobody.
                 isRequired = !descriptor.isElementOptional(index) && !property.returnType.isMarkedNullable
             )
+        }
+    }
+
+    /**
+     * The primitive this descriptor writes, or `null` when it writes something else.
+     *
+     * A property with a serializer of its own — `@Serializable(with = ...)` — is written as
+     * whatever that serializer writes, however many fields the class behind it happens to have.
+     * Reflection would take such a type apart, so the serializer is asked first.
+     */
+    private fun SerialDescriptor.serializedAsPrimitive(nullable: Boolean): Type? {
+        return when (kind as? PrimitiveKind ?: return null) {
+            PrimitiveKind.STRING, PrimitiveKind.CHAR -> Type.String(nullable = nullable)
+            PrimitiveKind.BOOLEAN -> Type.Boolean(nullable)
+            PrimitiveKind.BYTE, PrimitiveKind.SHORT, PrimitiveKind.INT -> Type.Integer(nullable, Format.INT32)
+            PrimitiveKind.LONG -> Type.Integer(nullable, Format.INT64)
+            PrimitiveKind.FLOAT -> Type.Number(nullable, Format.FLOAT)
+            PrimitiveKind.DOUBLE -> Type.Number(nullable, Format.DOUBLE)
         }
     }
 
@@ -158,8 +223,10 @@ class OpenApiKType(private val original: KType) {
         if (resolved.classifier is KTypeParameter) {
             return Type.Any(resolved.isMarkedNullable)
         }
+        val builtIn = resolved.builtInType()
         return when {
-            resolved.isCollection() -> resolved.arrayType()
+            builtIn != null -> builtIn
+            resolved.isCollection() || resolved.isArray() -> resolved.arrayType()
             resolved.isMap() -> resolved.mapType()
             resolved.isEnum() -> resolved.enumType()
             resolved.isPrimitive() -> resolved.primitiveType
@@ -184,16 +251,20 @@ class OpenApiKType(private val original: KType) {
     }
 
     /**
-     * Type of the elements of a collection, or `null` when it is not known — a star projection
-     * (`List<*>`) or a raw type whose supertypes carry no argument either.
+     * Type of the elements of a collection or an array, or `null` when it is not known — a star
+     * projection (`List<*>`) or a raw type whose supertypes carry no argument either.
      */
     private fun KType.elementType(): KType? {
         if (arguments.isNotEmpty()) {
             return arguments.first().type
         }
-        return jvmErasure.supertypes
+        jvmErasure.supertypes
             .firstOrNull { it.isSubtypeOf(typeOf<Set<*>>()) || it.isSubtypeOf(typeOf<List<*>>()) }
             ?.arguments?.firstOrNull()?.type
+            ?.let { return it }
+        // An array of primitives (`IntArray`) has no type argument to read; the component type of
+        // the class it erases to is the same thing.
+        return jvmErasure.java.componentType?.kotlin?.createType()
     }
 
     // ToDo a map is an object with `additionalProperties`, not an object with a property named
@@ -233,11 +304,17 @@ class OpenApiKType(private val original: KType) {
                 isSubtypeOf(typeOf<Number?>()) ||
                 isSubtypeOf(typeOf<Boolean?>()) ||
                 isSubtypeOf(typeOf<UUID?>()) ||
+                isSubtypeOf(typeOf<Locale?>()) ||
                 isSubtypeOf(typeOf<Duration?>())
     }
 
     private fun KType.isCollection(): Boolean {
         return isSubtypeOf(typeOf<Collection<*>?>())
+    }
+
+    /** An array is not a `Collection` in Kotlin, but it is an array in OpenAPI all the same. */
+    private fun KType.isArray(): Boolean {
+        return jvmErasure.java.isArray
     }
 
     private fun KType.isMap(): Boolean {
@@ -254,6 +331,35 @@ class OpenApiKType(private val original: KType) {
 
     private companion object {
         const val MAP_NAME = "map"
+        const val JAVA_TIME_PACKAGE = "java.time."
+
+        /**
+         * Types written as a string, and the format they are written in.
+         *
+         * Matched by name rather than by class: `kotlinx.datetime` is not a dependency of this
+         * library, and a project that uses it still deserves its dates described as dates. An empty
+         * format means a string of no particular shape.
+         */
+        val BUILT_IN_FORMATS = mapOf(
+            "java.time.LocalDate" to Format.DATE,
+            "java.time.LocalDateTime" to Format.DATE_TIME,
+            "java.time.OffsetDateTime" to Format.DATE_TIME,
+            "java.time.ZonedDateTime" to Format.DATE_TIME,
+            "java.time.Instant" to Format.DATE_TIME,
+            "java.time.LocalTime" to Format.TIME,
+            "java.time.OffsetTime" to Format.TIME,
+            "java.time.Duration" to Format.DURATION,
+            "java.util.Date" to Format.DATE_TIME,
+            "java.net.URI" to Format.URI,
+            "java.net.URL" to Format.URI,
+            "kotlin.ByteArray" to Format.BINARY,
+            "kotlin.uuid.Uuid" to Format.UUID,
+            "kotlin.time.Instant" to Format.DATE_TIME,
+            "kotlinx.datetime.Instant" to Format.DATE_TIME,
+            "kotlinx.datetime.LocalDate" to Format.DATE,
+            "kotlinx.datetime.LocalDateTime" to Format.DATE_TIME,
+            "kotlinx.datetime.LocalTime" to Format.TIME
+        )
     }
 }
 

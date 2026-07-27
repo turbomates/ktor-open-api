@@ -77,8 +77,7 @@ class TopLevelTypeTest {
         val response = client.get("/openapi.json").bodyAsText()
 
         assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
-        // `number` rather than `integer` is C2 and untouched here.
-        assertContains(response, "\"schema\":{\"nullable\":false,\"type\":\"number\"}")
+        assertContains(response, "\"schema\":{\"nullable\":false,\"type\":\"integer\",\"format\":\"int64\"}")
     }
 
     @Test
@@ -103,7 +102,7 @@ class TopLevelTypeTest {
         // value wherever it stands: `{"price": 1}` is what the serializer emits, not an object.
         val type = typeOf<Order>().openApiKType.objectType()
 
-        assertIs<Type.Number>(type.properties.single().type)
+        assertIs<Type.Integer>(type.properties.single().type)
     }
 
     @Test
