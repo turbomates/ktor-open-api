@@ -1,7 +1,4 @@
-// UnusedImports is suppressed for `io.ktor.server.response.respond`: the rule reads `call.respond`
-// as a member call, while dropping the import makes the call resolve to an overload that wants an
-// explicit `typeInfo` and the file stops compiling.
-@file:Suppress("unused", "OPT_IN_USAGE", "UnusedImports")
+@file:Suppress("unused", "OPT_IN_USAGE")
 
 package com.turbomates.openapi.ktor
 

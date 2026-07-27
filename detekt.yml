@@ -244,6 +244,12 @@ style:
     active: true
   UnusedImports:
     active: true
+    # `io.ktor.server.response.respond` is reported as unused in the verb DSL files, where
+    # `call.respond` also matches a member of `ApplicationCall` that takes an explicit `typeInfo`.
+    # Dropping the import makes the call resolve to that member and the files stop compiling, so the
+    # rule is only excluded there.
+    excludes:
+      - '**/ktor/{Get,Post,Put,Patch,Delete}.kt'
   UseDataClass:
     active: true
   UseIfEmptyOrIfBlank:
