@@ -1,4 +1,5 @@
 @file:Suppress("MemberVisibilityCanBePrivate", "unused")
+@file:OptIn(ExperimentalSerializationApi::class)
 
 package com.turbomates.openapi
 
@@ -7,6 +8,7 @@ import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
 import kotlin.reflect.KTypeParameter
+import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.withNullability
@@ -14,6 +16,11 @@ import kotlin.reflect.jvm.javaType
 import kotlin.reflect.jvm.jvmErasure
 import kotlin.reflect.typeOf
 import kotlin.time.Duration
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.serializerOrNull
 
 class OpenApiKType(private val original: KType) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
@@ -95,13 +102,49 @@ class OpenApiKType(private val original: KType) {
         val key = type.withNullability(false)
         building.add(key)
         try {
-            val descriptions = type.jvmErasure.memberProperties
-                .filterNot { it.isLateinit }
-                .map { property -> Property(property.name, buildType(property.returnType)) }
-            return Type.Object(name, descriptions, returnType = type, nullable = type.isMarkedNullable)
+            return Type.Object(name, type.objectProperties(), returnType = type, nullable = type.isMarkedNullable)
         } finally {
             building.remove(key)
         }
+    }
+
+    /**
+     * Properties of an object as they are serialized.
+     *
+     * The serializer of the type is the source of truth when there is one: it knows the names the
+     * properties are written under (`@SerialName`), which of them are written at all (`@Transient`
+     * and computed getters are not), the order they come in, and which ones may be left out (the
+     * ones with a default value). Reflection knows none of that — it reports every member property
+     * in alphabetical order under its Kotlin name.
+     *
+     * A type without a serializer — one that is not `@Serializable` — is still described by
+     * reflection, since that is all there is to go by.
+     */
+    private fun KType.objectProperties(): List<Property> {
+        val properties = jvmErasure.memberProperties.filterNot { it.isLateinit }
+        val descriptor = serialDescriptor()?.takeIf { it.kind is StructureKind }
+            ?: return properties.map { property ->
+                Property(property.name, buildType(property.returnType))
+            }
+        val bySerialName = properties.associateBy { it.findAnnotation<SerialName>()?.value ?: it.name }
+        return (0 until descriptor.elementsCount).mapNotNull { index ->
+            val serialName = descriptor.getElementName(index)
+            val property = bySerialName[serialName] ?: return@mapNotNull null
+            Property(
+                serialName,
+                buildType(property.returnType),
+                // A property is required when the key has to be there — that is, when the
+                // serializer has no default to fall back on. A nullable one is left optional even
+                // so: `nullable: true` already says a value may be missing in every sense a client
+                // cares about, and demanding an explicit `null` in the body helps nobody.
+                isRequired = !descriptor.isElementOptional(index) && !property.returnType.isMarkedNullable
+            )
+        }
+    }
+
+    /** Descriptor of the serializer of this type, or `null` when the type has none. */
+    private fun KType.serialDescriptor(): SerialDescriptor? {
+        return runCatching { serializerOrNull(this) }.getOrNull()?.descriptor
     }
 
     private fun buildType(memberType: KType): Type {

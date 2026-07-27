@@ -30,6 +30,7 @@ data class SchemaObject(
     val type: String? = null,
     val allOf: List<SchemaObject>? = null,
     val properties: Map<String, SchemaObject>? = null,
+    val required: List<String>? = null,
     val additionalProperties: SchemaObject? = null,
     val items: SchemaObject? = null,
     val deprecated: Boolean? = null,

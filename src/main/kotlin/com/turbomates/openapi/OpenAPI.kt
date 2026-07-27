@@ -131,7 +131,9 @@ class OpenAPI(var host: String) {
             // A path parameter is part of the URL, so it can be neither optional nor null,
             // whatever the nullability of the property describing it.
             val schema = it.type.toSchemaObject().let { schema -> if (isPath) schema.copy(nullable = false) else schema }
-            ParameterObject(it.name, schema = schema, required = isPath || it.type.isRequired, `in` = `in`.value)
+            // A query parameter the caller may leave out is optional for the same reason a property
+            // with a default is: there is a value to fall back on.
+            ParameterObject(it.name, schema = schema, required = isPath || it.isRequired, `in` = `in`.value)
         }
     }
 
@@ -166,6 +168,7 @@ class OpenAPI(var host: String) {
         return SchemaObject(
             type = "object",
             properties = properties.associate { it.name to it.type.toSchemaObject() },
+            required = properties.filter { it.isRequired }.map { it.name }.takeIf { it.isNotEmpty() },
             example = example,
             nullable = nullable
         )
@@ -293,7 +296,14 @@ class OpenAPI(var host: String) {
 
 data class Property(
     val name: String,
-    val type: Type
+    val type: Type,
+    /**
+     * Whether the key has to be there at all, which is not the same as being allowed to be `null`.
+     *
+     * Unless said otherwise, a property is required exactly when it cannot be `null` — that is all
+     * a type alone can tell.
+     */
+    val isRequired: Boolean = !type.isNullable
 )
 
 enum class INType(val value: String) {
