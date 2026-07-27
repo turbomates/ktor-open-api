@@ -78,13 +78,13 @@ class OpenAPI(var host: String) {
     private fun Type.toResponseObject(): ResponseObject {
         return ResponseObject(
             "empty description",
-            content = mapOf("application/json" to MediaTypeObject(schema = toSchemaObject())),
+            content = mapOf(JSON_MEDIA_TYPE to MediaTypeObject(schema = toSchemaObject())),
         )
     }
 
     private fun Type.toRequestBodyObject(): RequestBodyObject {
         return RequestBodyObject(
-            content = mapOf("application/json" to MediaTypeObject(schema = toSchemaObject())),
+            content = mapOf(JSON_MEDIA_TYPE to MediaTypeObject(schema = toSchemaObject())),
             required = isRequired
         )
     }
@@ -198,6 +198,11 @@ class OpenAPI(var host: String) {
         val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
         val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
         return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult, tags = mergedTags)
+    }
+
+    private companion object {
+        /** The only media type responses and request bodies are described with so far (see C11). */
+        const val JSON_MEDIA_TYPE = "application/json"
     }
 }
 
