@@ -36,12 +36,12 @@ path-параметров. Практически всё за пределами
 | B3 | ✅ исправлено | value class / enum в ответе → `ClassCastException` | — |
 | B4 | ✅ исправлено | Raw-генерики и `List<*>` → `NullPointerException` | — |
 | B5 | ✅ исправлено | `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException` | — |
-| C1 | неверно | Нет `required` — все поля схемы опциональны | — |
-| C2 | неверно | `Int`/`Long` → `number`, `format` отсутствует в модели вовсе | — |
-| C3 | неверно | `Map<K,V>` → `properties: {"String": ...}` вместо `additionalProperties` | — |
-| C4 | неверно | `java.time.*`, `ByteArray` рефлексируются во внутренности | — |
-| C5 | неверно | `sealed class` → пустой `{}`, без `oneOf`/`discriminator` | — |
-| C6 | неверно | Вычисляемые getter'ы попадают в схему, порядок полей не декларационный | — |
+| C1 | ✅ исправлено | Нет `required` — все поля схемы опциональны | — |
+| C2 | ✅ исправлено | `Int`/`Long` → `number`, `format` отсутствует в модели вовсе | — |
+| C3 | ✅ исправлено | `Map<K,V>` → `properties: {"String": ...}` вместо `additionalProperties` | — |
+| C4 | ✅ исправлено | `java.time.*`, `ByteArray` рефлексируются во внутренности | — |
+| C5 | ✅ исправлено | `sealed class` → пустой `{}`, без `oneOf`/`discriminator` | — |
+| C6 | ✅ исправлено | Вычисляемые getter'ы попадают в схему, порядок полей не декларационный | — |
 | C7 | ✅ исправлено | Нет `$ref`/`components` — схемы инлайнятся, `addModel` не вызывается | — |
 | C8 | пробел | `description` ответов всегда `"empty description"` | — |
 | C9 | пробел | `tags` принимаются в `get()` и молча выбрасываются | — |
@@ -509,7 +509,7 @@ DSL-функций `head`/`options`/`trace` по-прежнему нет — з�
 
 Это опаснее ошибок валидатора: спека проходит проверку и попадает клиентам, будучи неправдой.
 
-### C1. Нет `required` — все поля опциональны
+### C1. Нет `required` — все поля опциональны — ✅ исправлено
 
 `SchemaObject` (`Components.kt:21`) вообще не имеет поля `required`. Обязательность выражается
 только через `nullable`:
@@ -531,7 +531,30 @@ data class Simple(val id: UUID, val name: String, val age: Int, val nick: String
 **Нужно**: добавить `required: List<String>?` в `SchemaObject` и заполнять его из non-null
 свойств.
 
-### C2. Числа и форматы
+**Сделано**: `required` появился в `SchemaObject`, а у `Property` — флаг `isRequired`. Источник
+обязательности — сериализатор (C6): свойство обязательно, когда у сериализатора нет дефолта, на
+который можно опереться.
+
+```json
+{"type":"object","properties":{...},"required":["id","name","age"]}
+```
+
+Два решения, которые стоит зафиксировать:
+
+- **Nullable-свойство остаётся необязательным**, даже если дефолта у него нет. Строго говоря,
+  `kotlinx.serialization` в дефолтной конфигурации потребует ключ `"nick": null` в теле; но при
+  `explicitNulls = false` — нет, а `nullable: true` и так говорит клиенту всё, что ему нужно.
+  Требовать явный `null` в теле — способ сломать существующих клиентов ради буквы; выбран мягкий
+  вариант, тот самый «из non-null свойств», что и предлагал аудит.
+- **Пустой `required` не сериализуется вовсе** — по спецификации массив должен быть непустым.
+
+Заодно `required` у query-параметра тоже перестал выводиться из одной лишь nullability: параметр с
+дефолтом теперь необязательный по той же причине, что и свойство с дефолтом.
+
+Тесты: `SerializedShapeTest` — обязательность от дефолтов и nullability, объект без единого
+обязательного поля, и тип без сериализатора (обязательность из nullability, больше не из чего).
+
+### C2. Числа и форматы — ✅ исправлено
 
 - `Int`, `Long`, `Short`, `BigDecimal` — всё `isSubtypeOf(Number)` → `"type":"number"`
   (`OpenApiKType.kt:24`). В OpenAPI есть `integer` c `int32`/`int64`.
@@ -544,7 +567,25 @@ data class Simple(val id: UUID, val name: String, val age: Int, val nick: String
 
 `Type` (`OpenAPI.kt:170`) тоже не имеет места для формата — правку нужно делать в обеих моделях.
 
-### C3. `Map<K, V>` описывается неверно
+**Сделано**: `format` добавлен и в `SchemaObject`, и в `Type` (`String`, `Number` и новый
+`Integer`), а имена форматов собраны в объекте `Format` — при желании любой другой можно задать
+через `customTypeDescription`, поле в OpenAPI открытое.
+
+| Kotlin | Было | Стало |
+|---|---|---|
+| `Int`, `Short`, `Byte` | `number` | `integer` / `int32` |
+| `Long` | `number` | `integer` / `int64` |
+| `BigInteger` | `number` | `integer` |
+| `Float` / `Double` | `number` | `number` / `float`, `double` |
+| `BigDecimal` | `number` | `number` (формата у неё нет) |
+| `UUID` | `string` | `string` / `uuid` |
+| `Duration` | `string` | `string` / `duration` |
+
+Остальные перечисленные поля `SchemaObject` — `title`, `description`, `default`, ограничения длины
+и диапазона — по-прежнему отсутствуют: это уже валидация (P1 в `issues.md`), а не соответствие
+спеки реальности. `allOf` и `oneOf` появились по ходу C7 и C5.
+
+### C3. `Map<K, V>` описывается неверно — ✅ исправлено
 
 `OpenApiKType.kt:109` строит объект с единственным свойством, названным по имени класса ключа:
 
@@ -559,7 +600,17 @@ data class WithMap(val meta: Map<String, Int>)
 `{"type":"object","additionalProperties":{"type":"integer"}}`; поле `additionalProperties` в
 `SchemaObject` уже есть (`Components.kt:32`) и нигде не используется.
 
-### C4. `java.time.*` и `ByteArray` рефлексируются во внутренности
+**Сделано**: заведён `Type.Map`, который в схему уходит именно так:
+
+```json
+"meta":{"nullable":false,"type":"object","additionalProperties":{"nullable":false,"type":"integer","format":"int32"}}
+```
+
+Тип ключа не описывается вовсе — ключи JSON-объекта строки, чем бы ключ ни был объявлен. У мапы с
+неизвестным типом значения `additionalProperties` — пустая схема: «значения любые», а не «полей
+нет».
+
+### C4. `java.time.*` и `ByteArray` рефлексируются во внутренности — ✅ исправлено
 
 Ни один тип, не попавший в список примитивов (`OpenApiKType.kt:145`), не отбраковывается — он
 молча раскладывается по member-property:
@@ -581,7 +632,28 @@ data class WithBytes(val payload: ByteArray)
 **Нужно**: из коробки маппить `java.time.*`/`kotlinx.datetime` в `string` + формат, `ByteArray` в
 `string`/`binary`, а неизвестные типы без свойств — ловить явной ошибкой, а не разворачивать.
 
-### C5. `sealed class` → пустой объект
+**Сделано**: заведена таблица встроенных соответствий — `java.time.*` (`date`, `date-time`,
+`time`, `duration`), `java.util.Date`, `ByteArray` → `string`/`binary`, `java.net.URI`/`URL` →
+`string`/`uri`, `kotlin.uuid.Uuid`. Сопоставление идёт по полному имени класса, а не по самому
+классу: `kotlinx.datetime` не зависимость этой библиотеки, но проект, который им пользуется,
+заслуживает описанных дат. Всё прочее из `java.time` уходит в бесформатный `string` — это ближе к
+правде, чем поля, которые у класса случайно оказались.
+
+Ещё три случая того же рода:
+
+- `Array<T>` и `IntArray` — не `Collection` в Kotlin, поэтому описывались своим единственным
+  свойством `size`; теперь это массивы, с типом элемента;
+- свойство, у которого свой сериализатор (`@Serializable(with = ...)`), описывается тем, что этот
+  сериализатор пишет, если он пишет примитив — знает об этом именно он, а не рефлексия;
+- `Any` — это «что угодно», а не объект без полей: теперь пустая схема.
+
+**Не сделано** из предложенного: падать на неизвестном типе без свойств. `Unit` и любой пустой DTO
+— ровно такие типы, и превращать их в падение на старте сразу после того, как этап 2 крэши убрал,
+неправильно. Случаи, ради которых это предлагалось, закрывает таблица плюс `customTypeDescription`.
+
+Тесты: `TypeFormatTest`.
+
+### C5. `sealed class` → пустой объект — ✅ исправлено
 
 ```kotlin
 sealed class Shape { data class Circle(val r: Double) : Shape(); data class Square(val a: Double) : Shape() }
@@ -592,7 +664,33 @@ get<Shape>(...)  // "schema":{"type":"object","properties":{}}
 используется). Полиморфные ответы описываются как пустой объект. То же для `Unit` —
 `{"type":"object","properties":{}}` плюс `content` даже при 204.
 
-### C6. Схема включает не то, что сериализуется
+**Сделано**: каждый подкласс описывается отдельной схемой, а сам sealed-тип — `oneOf` из них с
+`discriminator`:
+
+```json
+"Payment":{"discriminator":{"propertyName":"type","mapping":{
+   "card":"#/components/schemas/Card","cash":"#/components/schemas/Cash"}},
+ "oneOf":[{"$ref":"#/components/schemas/Card"},{"$ref":"#/components/schemas/Cash"}]}
+```
+
+- `propertyName` — `type`: то поле, в которое `kotlinx.serialization` пишет тип значения;
+- ключи `mapping` — serial-имена подклассов (`@SerialName`, иначе полное имя класса), то есть
+  ровно то, что окажется в JSON. Mapping выписывается явно: имена компонентов наши, и угадать по
+  значению нужную схему генератору неоткуда;
+- иерархия **без** `@Serializable` описывается без дискриминатора — чем её подклассы различаются в
+  JSON, не нам придумывать;
+- sealed-тип, ссылающийся на себя (дерево выражений), описывается через `$ref`, как и всё
+  остальное после C7.
+
+В `SchemaObject` добавлен `oneOf`, `DiscriminatorObject.mapping` стал необязательным, а регистрация
+компонента обобщена за пределы объектов.
+
+`Unit` из этой находки остался как есть: `{"type":"object","properties":{}}` — честное описание
+пустого тела. Отсутствие `content` у 204 — это C11 (коды ответов и content-type).
+
+Тесты: `SealedTypeTest`.
+
+### C6. Схема включает не то, что сериализуется — ✅ исправлено
 
 `buildObjectType` идёт по `memberProperties` (`OpenApiKType.kt:76`), поэтому:
 
@@ -619,6 +717,28 @@ data class Dto(
 
 То есть спека объявляет несуществующее поле `internal`, называет `user_id` как `userId` и не
 описывает фактическое имя вовсе.
+
+**Сделано**: источник истины — сериализатор типа, когда он есть. `SerialDescriptor` знает, под
+какими именами пишутся свойства, какие пишутся вообще, в каком порядке и какие можно не передавать.
+Тот же DTO теперь описывается так, как и выглядит в JSON:
+
+```
+схема:      properties: user_id, kept   (в порядке объявления)
+реальность: {"user_id":"1","kept":"k"}
+```
+
+Сразу закрылись все четыре пункта находки — `@SerialName`, `@Transient`, вычисляемые getter'ы,
+порядок полей — и вдобавок дефолты, из которых берётся обязательность (C1).
+
+Соответствие «элемент дескриптора → свойство» ищется по serial-имени: имя элемента сверяется с
+`@SerialName` свойства, а типы по-прежнему берутся из рефлексии — без `KType` не построить ни
+подстановку дженериков, ни `customTypeDescription`, ни имена компонентов.
+
+Тип **без** сериализатора (не `@Serializable`) описывается рефлексией, как и раньше: алфавитный
+порядок, Kotlin-имена, обязательность из nullability. Иначе библиотека перестала бы работать с
+обычными классами, а параметры операций в проектах сплошь и рядом такие.
+
+Тесты: `SerializedShapeTest`.
 
 ### C7. Нет `$ref` и `components` — ✅ исправлено
 
@@ -724,14 +844,16 @@ overload'ах.
 
 ### Этап 3 — привести смысл в соответствие
 
-9. **`required` в `SchemaObject`** из non-null свойств (C1) — самая важная семантическая правка.
+9. **`required` в `SchemaObject`** из non-null свойств (C1) — самая важная семантическая правка. —
+   ✅ сделано.
 10. **`format` в `SchemaObject` и в `Type`**, `integer` для целых, встроенные маппинги
-    `java.time.*`/`UUID`/`ByteArray` (C2, C4).
-11. **`Map` → `additionalProperties`** (C3).
+    `java.time.*`/`UUID`/`ByteArray` (C2, C4). — ✅ сделано.
+11. **`Map` → `additionalProperties`** (C3). — ✅ сделано.
 12. **Источник истины — `kotlinx.serialization`** (`SerialDescriptor`) вместо `memberProperties`:
     сразу закрывает `@SerialName`, `@Transient`, порядок полей, дефолты и обязательность (C6, и
-    сильно упрощает C1). Самая крупная, но и самая окупаемая переделка.
-13. **`sealed class` → `oneOf` + `discriminator`** (C5).
+    сильно упрощает C1). Самая крупная, но и самая окупаемая переделка. — ✅ сделано (для типов без
+    сериализатора рефлексия осталась запасным вариантом).
+13. **`sealed class` → `oneOf` + `discriminator`** (C5). — ✅ сделано.
 
 ### Этап 4 — метаданные и DSL
 
@@ -759,3 +881,24 @@ enum (включая nullable), вложенные объекты, коллек�
 и с правильным описанием, см. B3), слияние операций по одному пути и разным методам,
 `customTypeDescription` для объектных типов, раздача `/openapi.json` и Swagger UI через
 webjars — всё это генерируется и проходит валидатор.
+
+## Где всё это оказалось после трёх этапов
+
+Типичный DTO — с serial-именами, датой, мапой, enum и полиморфным полем — описывается так:
+
+```json
+"User":{"type":"object","properties":{
+  "id":{"type":"string","format":"uuid"},
+  "full_name":{"type":"string"},
+  "age":{"type":"integer","format":"int32"},
+  "registeredAt":{"type":"string","format":"date"},
+  "nickname":{"nullable":true,"type":"string"},
+  "roles":{"type":"array","items":{"type":"string","enum":["ADMIN","USER"]}},
+  "meta":{"type":"object","additionalProperties":{"type":"string"}},
+  "payment":{"$ref":"#/components/schemas/Payment"}},
+ "required":["id","full_name","age","registeredAt","roles","meta","payment"]}
+```
+
+Осталось (этап 4, все — про метаданные и DSL, не про правдивость схем): описания ответов и
+`operationId` (C8), проброс `tags` (C9), настраиваемые `info`/`servers` (C10), spec-модели
+security и callbacks (A7–A10), header-параметры, content-type и per-route коды ответов (C11).

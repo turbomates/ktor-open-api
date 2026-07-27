@@ -207,10 +207,19 @@ The library automatically converts Kotlin types to OpenAPI schemas:
 | Locale | string | - |
 | LocalDate | string | date |
 | LocalDateTime | string | date-time |
+| Instant, ZonedDateTime | string | date-time |
+| ByteArray | string | binary |
+| URI, URL | string | uri |
 | List, Set, Array | array | - |
-| Map | object | - |
+| Map | object | `additionalProperties` |
 | Enum | string | enum values |
 | Value Class | (unwrapped type) | - |
+| Sealed class | `oneOf` + `discriminator` | - |
+
+Types are described in `components.schemas` and referenced with `$ref`, so a type shared by several
+endpoints is written once. `@SerialName`, `@Transient`, property order and default values are taken
+from the `kotlinx.serialization` descriptor of the type, so the schema describes what is actually
+written; a type that is not `@Serializable` is described by reflection instead.
 
 #### Complex Types
 
@@ -242,8 +251,9 @@ The above will automatically generate:
         "type": "array",
         "items": { "type": "string", "enum": ["ADMIN", "USER", "GUEST"] }
       },
-      "metadata": { "type": "object" }
-    }
+      "metadata": { "type": "object", "additionalProperties": {} }
+    },
+    "required": ["id", "name", "email", "roles", "metadata"]
   }
 }
 ```

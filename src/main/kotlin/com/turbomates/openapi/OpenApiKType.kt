@@ -80,6 +80,10 @@ class OpenApiKType(private val original: KType) {
      */
     private fun KType.builtInType(): Type? {
         val qualifiedName = jvmErasure.qualifiedName ?: return null
+        // `Any` is every type at once, which is the same as saying nothing about the value.
+        if (qualifiedName == ANY_CLASS) {
+            return Type.Any(isMarkedNullable)
+        }
         BUILT_IN_FORMATS[qualifiedName]?.let {
             return Type.String(nullable = isMarkedNullable, format = it.takeIf(kotlin.String::isNotEmpty))
         }
@@ -375,6 +379,7 @@ class OpenApiKType(private val original: KType) {
 
     private companion object {
         const val JAVA_TIME_PACKAGE = "java.time."
+        const val ANY_CLASS = "kotlin.Any"
 
         /** The property `kotlinx.serialization` writes the type of a polymorphic value into. */
         const val CLASS_DISCRIMINATOR = "type"
