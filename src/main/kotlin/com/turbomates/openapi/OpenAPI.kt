@@ -3,6 +3,7 @@
 package com.turbomates.openapi
 
 import com.turbomates.openapi.spec.Components
+import com.turbomates.openapi.spec.ExternalDocumentationObject
 import com.turbomates.openapi.spec.DiscriminatorObject
 import com.turbomates.openapi.spec.InfoObject
 import com.turbomates.openapi.spec.MediaTypeObject
@@ -13,18 +14,46 @@ import com.turbomates.openapi.spec.RequestBodyObject
 import com.turbomates.openapi.spec.ResponseObject
 import com.turbomates.openapi.spec.Root
 import com.turbomates.openapi.spec.SchemaObject
+import com.turbomates.openapi.spec.SecurityRequirement
+import com.turbomates.openapi.spec.SecuritySchemeObject
+import com.turbomates.openapi.spec.ServerObject
+import com.turbomates.openapi.spec.ServerVariableObject
+import com.turbomates.openapi.spec.TagObject
 import kotlinx.serialization.json.JsonElement
 import kotlin.reflect.KType
 import kotlin.reflect.full.withNullability
 import kotlin.reflect.jvm.jvmErasure
 
-class OpenAPI(var host: String) {
+class OpenAPI(host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
     private val customTypes: MutableMap<KType, Type> = mutableMapOf()
 
     /** Component name every described type is registered under, keyed by the type itself. */
     private val componentNames: MutableMap<KType, String> = mutableMapOf()
     private val schemas: MutableMap<String, SchemaObject> = mutableMapOf()
+    private val securitySchemes: MutableMap<String, SecuritySchemeObject> = mutableMapOf()
+    private val configuredServers: MutableList<ServerObject> = mutableListOf()
+
+    /**
+     * Where the API is served from, as the server the document lists until another one is given.
+     *
+     * A bare host — `api.example.com` — is not a URL, so a scheme is put in front of it: `http` for
+     * a local address, `https` for everything else. A value that already is a URL, absolute or
+     * relative, is left as it is. Call [server] to describe the servers in full instead.
+     */
+    var host: String = host
+        set(value) {
+            field = value
+            publishServers()
+        }
+
+    /** Metadata of the document — its title, version, description and the rest. */
+    val info: InfoObject
+        get() = root.info
+
+    init {
+        publishServers()
+    }
 
     fun addToPath(
         path: String,
@@ -85,6 +114,51 @@ class OpenAPI(var host: String) {
 
     fun setCustomClassType(kType: KType, type: Type) {
         customTypes[kType] = type
+    }
+
+    /** Describes the document itself — `openApi.info { title = "Orders"; version = "2.0" }`. */
+    fun info(block: InfoObject.() -> Unit) {
+        root.info.apply(block)
+    }
+
+    /**
+     * Adds a server the API is offered at.
+     *
+     * The first call replaces the server derived from [host]: a document either describes its
+     * servers or falls back on the host it was built with, never both.
+     */
+    fun server(
+        url: String,
+        description: String? = null,
+        variables: Map<String, ServerVariableObject>? = null
+    ) {
+        configuredServers.add(ServerObject(url, description, variables))
+        publishServers()
+    }
+
+    /** Describes a tag the operations are grouped by. Operations may use tags described here or not. */
+    fun tag(name: String, description: String? = null, externalDocs: ExternalDocumentationObject? = null) {
+        root.tags = root.tags.orEmpty() + TagObject(name, description, externalDocs)
+    }
+
+    fun externalDocs(url: String, description: String? = null) {
+        root.externalDocs = ExternalDocumentationObject(url, description)
+    }
+
+    /** Offers a security scheme operations may require. Build one with [SecurityScheme]. */
+    fun securityScheme(name: String, scheme: SecuritySchemeObject) {
+        securitySchemes[name] = scheme
+        publishComponents()
+    }
+
+    /**
+     * Requires [requirements] of every operation that does not state its own.
+     *
+     * Satisfying any one of them is enough; pass none to say that the API is open by default,
+     * which is what an operation of a document without global security means anyway.
+     */
+    fun security(vararg requirements: SecurityRequirement) {
+        root.security = requirements.toList()
     }
 
     /**
@@ -284,7 +358,22 @@ class OpenAPI(var host: String) {
     }
 
     private fun publishComponents() {
-        root.components = (root.components ?: Components()).copy(schemas = schemas.toMap())
+        root.components = (root.components ?: Components()).copy(
+            schemas = schemas.toMap().takeIf { it.isNotEmpty() },
+            securitySchemes = securitySchemes.toMap().takeIf { it.isNotEmpty() }
+        )
+    }
+
+    private fun publishServers() {
+        root.servers = configuredServers.toList().ifEmpty { listOf(ServerObject(host.asServerUrl())) }
+    }
+
+    private fun String.asServerUrl(): String {
+        if (contains(SCHEME_SEPARATOR) || startsWith("/")) {
+            return this
+        }
+        val scheme = if (LOCAL_HOSTS.any { this == it || startsWith("$it:") }) "http" else "https"
+        return "$scheme$SCHEME_SEPARATOR$this"
     }
 
     /** Methods a path item can describe. */
@@ -340,6 +429,8 @@ class OpenAPI(var host: String) {
     private companion object {
         /** The only media type responses and request bodies are described with so far (see C11). */
         const val JSON_MEDIA_TYPE = "application/json"
+        const val SCHEME_SEPARATOR = "://"
+        val LOCAL_HOSTS = listOf("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
         const val COMPONENT_SCHEMA_PATH = "#/components/schemas/"
         const val OBJECT_TYPE = "object"
 
