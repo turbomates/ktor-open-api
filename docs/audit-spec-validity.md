@@ -27,10 +27,10 @@ path-параметров. Практически всё за пределами
 | A4 | ✅ исправлено | Шаблоны `{id?}`, `{path...}` уходят в спеку как есть, имя tailcard теряется | ошибка |
 | A5 | ✅ исправлено | Пустой `paths` вообще не сериализуется | ошибка |
 | A6 | ✅ исправлено | Повторная регистрация пути дублирует параметры | ошибка |
-| A7 | невалидно | Модель `SecuritySchemaObject` эмитит недопустимые поля | 4 ошибки |
-| A8 | невалидно | Поля без дефолтов сериализуются как явные `null` | — |
-| A9 | игнорируется | `security` операции уходит под ключом `securitySchemaObject` | — |
-| A10 | невалидно | `PathItemObject.servers`, `CallbackObject` описаны неверными типами | — |
+| A7 | ✅ исправлено | Модель `SecuritySchemaObject` эмитит недопустимые поля | 4 ошибки |
+| A8 | ✅ исправлено | Поля без дефолтов сериализуются как явные `null` | — |
+| A9 | ✅ исправлено | `security` операции уходит под ключом `securitySchemaObject` | — |
+| A10 | ✅ исправлено | `PathItemObject.servers`, `CallbackObject` описаны неверными типами | — |
 | B1 | ✅ исправлено | Рекурсивные типы → `StackOverflowError` | — |
 | B2 | ✅ исправлено | `List<T>`/`String` в ответе → `InvalidTypeForOpenApiType` | — |
 | B3 | ✅ исправлено | value class / enum в ответе → `ClassCastException` | — |
@@ -43,10 +43,10 @@ path-параметров. Практически всё за пределами
 | C5 | ✅ исправлено | `sealed class` → пустой `{}`, без `oneOf`/`discriminator` | — |
 | C6 | ✅ исправлено | Вычисляемые getter'ы попадают в схему, порядок полей не декларационный | — |
 | C7 | ✅ исправлено | Нет `$ref`/`components` — схемы инлайнятся, `addModel` не вызывается | — |
-| C8 | пробел | `description` ответов всегда `"empty description"` | — |
-| C9 | пробел | `tags` принимаются в `get()` и молча выбрасываются | — |
-| C10 | пробел | `info.title`/`version` нельзя изменить, `host` не используется | — |
-| C11 | пробел | Только `application/json`, нет multipart/binary, нет заголовков | — |
+| C8 | ✅ исправлено | `description` ответов всегда `"empty description"` | — |
+| C9 | ✅ исправлено | `tags` принимаются в `get()` и молча выбрасываются | — |
+| C10 | ✅ исправлено | `info.title`/`version` нельзя изменить, `host` не используется | — |
+| C11 | ✅ исправлено | Только `application/json`, нет multipart/binary, нет заголовков | — |
 
 ---
 
@@ -298,7 +298,7 @@ path item, а не в операцию: два уровня сами по себ
 одноимённые path и query параметры, сочетание с A1 (в операции ровно один параметр и именно
 объявленный), плюс прямой вызов `addToPath` дважды на уровне ядра.
 
-### A7. Модель security-схем не соответствует спецификации
+### A7. Модель security-схем не соответствует спецификации — ✅ исправлено
 
 В `SecuritySchemaObject` (`Components.kt:91`) все поля, кроме `description` и `bearerFormat`, —
 non-null и без дефолтов. Описать обычный bearer невозможно без выдуманных значений, и они уезжают
@@ -322,7 +322,13 @@ attribute components.securitySchemes.BearerAuth.scopes is unexpected
 
 **Нужно**: сделать все поля nullable с дефолтами `null` и завести отдельные flow-объекты.
 
-### A8. Поля без дефолтов сериализуются как явные `null`
+**Сделано**: это `SecuritySchemeObject`, где обязателен только `type`, а `OAuthFlowsObject` —
+map из четырёх именованных flow (`implicit`, `password`, `clientCredentials`,
+`authorizationCode`), каждый со своим `OAuthFlowObject`. Собирать схему руками не нужно:
+`SecurityScheme.bearer()`, `.basic()`, `.apiKey()`, `.oauth2 { ... }`, `.openIdConnect()`
+заполняют ровно те поля, которые допустимы для своего вида, — смешать их уже нельзя.
+
+### A8. Поля без дефолтов сериализуются как явные `null` — ✅ исправлено
 
 `encodeDefaults = false` не спасает поля, у которых дефолта нет вообще — в примере выше видно
 `"description":null`. Затронуты: `SecuritySchemaObject.description`, `ExampleObject` (все поля),
@@ -331,7 +337,10 @@ attribute components.securitySchemes.BearerAuth.scopes is unexpected
 
 **Нужно**: `= null` дефолты на все опциональные поля spec-моделей.
 
-### A9. `security` операции уходит под неправильным ключом
+**Сделано**: дефолты проставлены во всех перечисленных моделях, так что при
+`encodeDefaults = false` неописанное поле не попадает в JSON вовсе.
+
+### A9. `security` операции уходит под неправильным ключом — ✅ исправлено
 
 `OperationObject.securitySchemaObject` (`Components.kt:155`) сериализуется как
 `"securitySchemaObject": {...}` — в спецификации поле называется `security`. Тулинг такое поле
@@ -343,7 +352,12 @@ attribute components.securitySchemes.BearerAuth.scopes is unexpected
 
 **Нужно**: `@SerialName("security")`, правильный тип, `var`.
 
-### A10. Ещё несоответствия spec-моделей
+**Сделано**: поле называется `security` и в операции, и в корне; тип — список security
+requirements (`List<Map<String, List<String>>>`, он же `SecurityRequirement`), `Root.security` —
+`var`. Требование операции задаётся через `security("BearerAuth")` в описании роута, глобальное —
+через `OpenAPI.security(securityRequirement("BearerAuth"))`.
+
+### A10. Ещё несоответствия spec-моделей — ✅ исправлено
 
 - `PathItemObject.servers: OperationObject?` (`Components.kt:139`) — должно быть `List<ServerObject>?`.
 - `CallbackObject(pathObject: PathsObject)` + `PathsObject(path: PathItemObject)`
@@ -353,6 +367,10 @@ attribute components.securitySchemes.BearerAuth.scopes is unexpected
 - `OperationObject.server: ServerObject?` — в спецификации `servers: List<ServerObject>`.
 
 Сейчас это не «стреляет» только потому, что перечисленные объекты нигде не заполняются.
+
+**Сделано**: `PathItemObject.servers` и `OperationObject.servers` — списки серверов,
+`CallbackObject` стал `Map<String, PathItemObject>` (выражение → path item), а `PathsObject`
+удалён за ненадобностью, `ServerVariableObject.enum` — список значений.
 
 ---
 
@@ -783,12 +801,24 @@ data class Dto(
 тип на двух эндпоинтах (одна схема, две ссылки), два разных типа с одинаковым simpleName,
 `addModel` со своим именем, пустой документ без `components` вовсе.
 
-### C8. Описания ответов — заглушка
+### C8. Описания ответов — заглушка — ✅ исправлено
 
 `toResponseObject` (`OpenAPI.kt:92`) хардкодит `"empty description"` — эта строка попадает в
 каждый ответ каждого эндпоинта.
 
-### C9. `tags` принимаются и молча выбрасываются
+**Сделано**: `description` у ответа обязателен по спецификации, поэтому просто убрать его нельзя —
+теперь это смысл самого кода (`200` → `OK`, `404` → `Not Found`, `default` → `Unexpected error`),
+пока роут не скажет что-то лучше:
+
+```kotlin
+get<UserResponse>("/users/{id}", {
+    summary = "Find a user"
+    operationId = "getUser"
+    response(HttpStatusCode.OK, "the user")
+}) { ... }
+```
+
+### C9. `tags` принимаются и молча выбрасываются — ✅ исправлено
 
 `Get.kt:19` объявляет `tags: List<String> = emptyList()` — и не передаёт их дальше. Ядро
 (`OpenAPI.addToPath`, `OpenAPI.kt:29`) теги поддерживает и даже корректно мёржит, но
@@ -798,7 +828,12 @@ data class Dto(
 Это единственная находка, где путь исправления — одна строка в `Router.kt` плюс параметр в
 overload'ах.
 
-### C10. Метаданные документа не настраиваются
+**Сделано**: `Router.addToPath` принимает описание операции и передаёт его в ядро, а параметр
+`tags: List<String>` у `get` убран — он никуда не доходил, и теги теперь задаются в том же блоке,
+что и остальные метаданные: `get<UserResponse>("/users", { tags("Users") }) { ... }`. Блок есть у
+всех глаголов, а не у одного.
+
+### C10. Метаданные документа не настраиваются — ✅ исправлено
 
 - `root.info` захардкожен: `InfoObject("Api", version = "0.1.0")` (`OpenAPI.kt:19`). Поле `info` —
   `val` в `data class Root`, а сам `root` — `val` в `OpenAPI`, так что **изменить title/version
@@ -808,7 +843,23 @@ overload'ах.
   поле.
 - `root.tags` — `val` (`Root.kt:13`), описания тегов задать нельзя.
 
-### C11. Content-type, заголовки, коды ответов
+**Сделано**: `info`, `servers`, `tags` и `externalDocs` настраиваются из `configure`:
+
+```kotlin
+configure = { openApi ->
+    openApi.info { title = "Orders"; version = "2.0" }
+    openApi.server("https://api.example.com", "Production")
+    openApi.tag("Users", "User management")
+    openApi.externalDocs("https://docs.example.com")
+}
+```
+
+`host` больше не лежит мёртвым грузом: пока серверы не описаны явно, он и есть сервер документа.
+Голый хост — не URL, поэтому ему добавляется схема (`http` для локального адреса, `https` для
+остальных), а значение, которое уже является URL, остаётся как есть. Явный `server` заменяет
+выведенный из хоста, а не добавляется к нему.
+
+### C11. Content-type, заголовки, коды ответов — ✅ исправлено
 
 - `application/json` захардкожен и в ответах, и в теле запроса (`OpenAPI.kt:95`, `:101`). Нет
   multipart/form-data, нет `application/octet-stream`, нет нескольких media type.
@@ -818,6 +869,25 @@ overload'ах.
   схема; описать «200 → User, 404 → Error» для конкретного роута нельзя.
 - Нет `operationId` — кодогенераторы будут выдумывать имена методов.
 - Ключи `responses` — `Map<Int, ...>`, зарезервированный `default` невыразим.
+
+**Сделано**: описание операции закрывает все пять пунктов.
+
+```kotlin
+post<UploadResponse, UploadRequest>("/uploads", {
+    consumes("multipart/form-data")
+    produces("application/json", "text/csv")
+    header<String>("X-Request-Id", required = true)
+    cookie<String>("session")
+    responseOf<ErrorResponse>(HttpStatusCode.NotFound, "no such upload")
+    defaultOf<ErrorResponse>("unexpected failure")
+    security("BearerAuth")
+}) { ... }
+```
+
+`responseOf<T>` даёт коду собственное тело — «200 → User, 404 → Error» описывается для конкретного
+роута, а не глобальным `responseCodeMap`; `response` описывает код без тела; ключи `responses`
+стали строками, поэтому `default` выразим наравне с кодами. `operationId` и `summary` — поля того
+же блока, а `INType` пополнился `COOKIE`.
 
 ---
 
@@ -857,11 +927,17 @@ overload'ах.
 
 ### Этап 4 — метаданные и DSL
 
-14. `info`/`servers` настраиваемые, `host` использовать по назначению (C10).
-15. Прокинуть `tags` (C9) — тривиально, ядро готово.
-16. Описания ответов, `operationId`, `summary` (C8).
-17. Починить spec-модели security/callbacks/servers и дефолты `null` (A7, A8, A9, A10).
-18. Header-параметры, content-type, per-route коды ответов (C11).
+14. `info`/`servers` настраиваемые, `host` использовать по назначению (C10). — ✅ сделано.
+15. Прокинуть `tags` (C9) — тривиально, ядро готово. — ✅ сделано (через общий блок описания
+    операции, а не отдельным параметром).
+16. Описания ответов, `operationId`, `summary` (C8). — ✅ сделано.
+17. Починить spec-модели security/callbacks/servers и дефолты `null` (A7, A8, A9, A10). —
+    ✅ сделано.
+18. Header-параметры, content-type, per-route коды ответов (C11). — ✅ сделано.
+
+**Не сделано** из того, что рядом: `callbacks` и `links` описаны моделями правильно, но DSL для
+них нет — их некому заполнить, кроме как руками через `root`. Валидация документа (уникальность
+`operationId`, ссылки на несуществующие security-схемы) остаётся за `swagger-parser` в тестах.
 
 ### Тестовое покрытие
 
