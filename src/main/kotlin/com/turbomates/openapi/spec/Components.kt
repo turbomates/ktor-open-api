@@ -1,6 +1,7 @@
 package com.turbomates.openapi.spec
 
 import kotlinx.serialization.Contextual
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -12,7 +13,7 @@ data class Components(
     val examples: Map<String, ExampleObject>? = null,
     val requestBodies: Map<String, RequestBodyObject>? = null,
     val headers: Map<String, HeaderObject>? = null,
-    val securitySchemes: Map<String, SecuritySchemaObject>? = null,
+    val securitySchemes: Map<String, SecuritySchemeObject>? = null,
     val links: Map<String, LinkObject>? = null,
     val callbacks: Map<String, CallbackObject>? = null
 )
@@ -28,7 +29,11 @@ data class SchemaObject(
     val externalDocs: ExternalDocumentationObject? = null,
     val example: JsonElement? = null,
     val type: String? = null,
+    val format: String? = null,
+    val allOf: List<SchemaObject>? = null,
+    val oneOf: List<SchemaObject>? = null,
     val properties: Map<String, SchemaObject>? = null,
+    val required: List<String>? = null,
     val additionalProperties: SchemaObject? = null,
     val items: SchemaObject? = null,
     val deprecated: Boolean? = null,
@@ -61,10 +66,10 @@ data class ParameterObject(
 
 @Serializable
 data class ExampleObject(
-    val summary: String?,
-    val description: String?,
-    @Contextual val value: Any?,
-    val externalValue: String?
+    val summary: String? = null,
+    val description: String? = null,
+    @Contextual val value: Any? = null,
+    val externalValue: String? = null
 )
 
 @Serializable
@@ -75,7 +80,7 @@ data class RequestBodyObject(
 )
 
 @Serializable
-data class DiscriminatorObject(val propertyName: String, val mapping: Map<String, String>)
+data class DiscriminatorObject(val propertyName: String, val mapping: Map<String, String>? = null)
 
 @Serializable
 data class MediaTypeObject(
@@ -87,41 +92,76 @@ data class MediaTypeObject(
 
 typealias HeaderObject = ParameterObject
 
+/**
+ * A security scheme the document offers.
+ *
+ * Everything but [type] is optional, and each field belongs to some of the scheme kinds only —
+ * `scheme` and `bearerFormat` to `http`, `name` and `in` to `apiKey`, `flows` to `oauth2`,
+ * `openIdConnectUrl` to `openIdConnect`. A field belonging to another kind is not merely useless
+ * but rejected by validators, so none of them has a value to fall back on and a scheme is best
+ * built through [com.turbomates.openapi.SecurityScheme].
+ */
 @Serializable
-data class SecuritySchemaObject(
+data class SecuritySchemeObject(
     val type: String,
-    val description: String?,
-    val name: String,
-    val `in`: String,
-    val scheme: String,
-    val bearerFormat: String?,
-    val flows: OAuthFlowsObject,
-    val openIdConnectUrl: String
+    val description: String? = null,
+    val name: String? = null,
+    val `in`: String? = null,
+    val scheme: String? = null,
+    val bearerFormat: String? = null,
+    val flows: OAuthFlowsObject? = null,
+    val openIdConnectUrl: String? = null
 )
 
+/** The OAuth2 flows a scheme supports, each described on its own. */
 @Serializable
 data class OAuthFlowsObject(
-    val authorizationUrl: String,
-    val tokenUrl: String,
-    val refreshUrl: String,
-    val scopes: Map<String, String>
+    val implicit: OAuthFlowObject? = null,
+    val password: OAuthFlowObject? = null,
+    val clientCredentials: OAuthFlowObject? = null,
+    val authorizationCode: OAuthFlowObject? = null
 )
+
+/**
+ * One OAuth2 flow.
+ *
+ * Which URLs a flow has depends on the flow — an implicit one has an authorization URL and no token
+ * URL, client credentials the other way round — so both are optional here and filled in by the
+ * [com.turbomates.openapi.SecurityScheme] builder that knows which flow it is describing.
+ */
+@Serializable
+data class OAuthFlowObject(
+    val authorizationUrl: String? = null,
+    val tokenUrl: String? = null,
+    val refreshUrl: String? = null,
+    val scopes: Map<String, String> = emptyMap()
+)
+
+/**
+ * Security schemes a request has to satisfy, keyed by the name of the scheme.
+ *
+ * The list held against a name is the scopes an `oauth2` or `openIdConnect` scheme requires, and is
+ * empty for every other kind.
+ */
+typealias SecurityRequirement = Map<String, List<String>>
 
 @Serializable
 data class LinkObject(
-    val operationRef: String?,
-    val operationId: String?,
-    val parameters: Map<String, @Contextual Any>?,
-    @Contextual val requestBody: Any?,
-    val description: String?,
-    val server: ServerObject?
+    val operationRef: String? = null,
+    val operationId: String? = null,
+    val parameters: Map<String, @Contextual Any>? = null,
+    @Contextual val requestBody: Any? = null,
+    val description: String? = null,
+    val server: ServerObject? = null
 )
 
-@Serializable
-data class CallbackObject(val pathObject: PathsObject)
-
-@Serializable
-data class PathsObject(val path: PathItemObject)
+/**
+ * Requests the API sends out on its own, keyed by the runtime expression saying where to send them.
+ *
+ * The expression — `{$request.body#/callbackUrl}` and the like — is the key of the map, so a
+ * callback *is* that map rather than an object wrapping one.
+ */
+typealias CallbackObject = Map<String, PathItemObject>
 
 @Serializable
 data class PathItemObject(
@@ -136,13 +176,17 @@ data class PathItemObject(
     var head: OperationObject? = null,
     var patch: OperationObject? = null,
     var trace: OperationObject? = null,
-    var servers: OperationObject? = null,
+    var servers: List<ServerObject>? = null,
     var parameters: List<ParameterObject>? = null
 )
 
 @Serializable
 data class OperationObject(
-    val responses: Map<Int, ResponseObject>,
+    /**
+     * Responses of the operation, keyed by status code or by `default` for the one describing every
+     * code not listed — a key that is not a number, which is why the codes are strings as well.
+     */
+    val responses: Map<String, ResponseObject>,
     val tags: List<String>? = null,
     val summary: String? = null,
     val description: String? = null,
@@ -152,19 +196,18 @@ data class OperationObject(
     val requestBody: RequestBodyObject? = null,
     val callbacks: Map<String, CallbackObject>? = null,
     val deprecated: Boolean? = null,
-    val securitySchemaObject: Map<String, List<String>>? = null,
-    val server: ServerObject? = null
-
+    @SerialName("security") val security: List<SecurityRequirement>? = null,
+    val servers: List<ServerObject>? = null
 )
 
 @Serializable
-data class ExternalDocumentationObject(val description: String?, val url: String)
+data class ExternalDocumentationObject(val url: String, val description: String? = null)
 
 @Serializable
 data class EncodingObject(
-    val contentType: String?,
-    val headers: Map<String, HeaderObject>?,
-    val style: String?,
-    val explode: Boolean?,
-    val allowReserved: Boolean?
+    val contentType: String? = null,
+    val headers: Map<String, HeaderObject>? = null,
+    val style: String? = null,
+    val explode: Boolean? = null,
+    val allowReserved: Boolean? = null
 )

@@ -20,6 +20,8 @@ Automatically generate OpenAPI 3.0 documentation for your Ktor application based
   - Generic type parameters
   - Nested objects
 - **Path, Query, and Body Parameters**: Automatically extracts parameter definitions from route signatures
+- **Operation Metadata**: Summary, description, `operationId`, tags, headers, cookies, media types and per-code responses through a DSL block on every route
+- **Security Schemes**: Bearer, basic, API key, OAuth2 and OpenID Connect, required globally or per operation
 - **Swagger UI Integration**: Built-in Swagger UI for interactive API documentation
 - **Custom Type Mapping**: Configure custom OpenAPI types for specific Kotlin types
 
@@ -148,6 +150,46 @@ delete<DeleteResponse>("/users/{id}") { params ->
 }
 ```
 
+### Documenting an Operation
+
+The types of a route say what it carries. Everything else — what it is called, which header it
+reads, what it answers with on a `404` — goes into an optional block between the path and the
+handler:
+
+```kotlin
+get<UserResponse, UserPath>("/users/{id}", {
+    summary = "Find a user"
+    description = "Looks the user up by id."
+    operationId = "getUser"
+    tags("Users")
+    deprecated = false
+
+    header<String>("X-Request-Id", required = true, description = "Request correlation id")
+    cookie<String>("session")
+    queryParameter<Boolean>("expand")
+
+    response(HttpStatusCode.OK, "the user")
+    responseOf<ErrorResponse>(HttpStatusCode.NotFound, "no user with that id")
+    defaultOf<ErrorResponse>("unexpected failure")
+
+    consumes(MediaType.JSON)
+    produces(MediaType.JSON, "text/csv")
+
+    security("BearerAuth")
+}) { path ->
+    service.find(path.id)
+}
+```
+
+- `response` describes a status code; `responseOf<T>` gives it a body of its own, which is how one
+  operation answers with a resource on `200` and an error on `404`.
+- `default` and `defaultOf<T>` describe every code not listed.
+- A response without a description of its own is described by what its status code means — `200` is
+  `OK`, `404` is `Not Found`.
+- `noSecurity()` opts an operation out of the security the document requires globally.
+
+The block is available on every verb, and every part of it is optional.
+
 ### Configuration
 
 #### Basic Configuration
@@ -176,21 +218,45 @@ install(OpenAPI) {
 
     // Custom type descriptions for specific types
     customTypeDescription = mapOf(
-        typeOf<MyCustomType>() to Type(
-            type = DataType.STRING,
-            format = "custom-format",
-            description = "Custom type description"
-        )
+        typeOf<MyCustomType>() to Type.String(format = "custom-format", nullable = false)
     )
 
-    // Additional configuration
+    // Everything the document says about itself
     configure = { openAPI ->
-        openAPI.info.title = "My API"
-        openAPI.info.version = "1.0.0"
-        openAPI.info.description = "API documentation"
+        openAPI.info {
+            title = "My API"
+            version = "1.0.0"
+            description = "API documentation"
+        }
+
+        openAPI.server("https://api.example.com", "Production")
+        openAPI.server("https://staging.example.com", "Staging")
+
+        openAPI.tag("Users", "User management operations")
+        openAPI.externalDocs("https://docs.example.com", "Full API documentation")
+
+        openAPI.securityScheme("BearerAuth", SecurityScheme.bearer("JWT"))
+        openAPI.securityScheme("ApiKeyAuth", SecurityScheme.apiKey("X-API-Key"))
+        openAPI.securityScheme(
+            "OAuth2",
+            SecurityScheme.oauth2 {
+                authorizationCode(
+                    authorizationUrl = "https://example.com/oauth/authorize",
+                    tokenUrl = "https://example.com/oauth/token",
+                    scopes = mapOf("read" to "Read access", "write" to "Write access")
+                )
+            }
+        )
+
+        // Required of every operation that does not state its own
+        openAPI.security(securityRequirement("BearerAuth"))
     }
 }
 ```
+
+`documentationBuilder = SwaggerOpenAPI("api.example.com")` is the server of the document until
+`server` is called: a bare host is given a scheme (`http` for a local address, `https` otherwise),
+and a value that already is a URL is kept as it is.
 
 ### Type System
 
@@ -207,10 +273,37 @@ The library automatically converts Kotlin types to OpenAPI schemas:
 | Locale | string | - |
 | LocalDate | string | date |
 | LocalDateTime | string | date-time |
+| Instant, ZonedDateTime | string | date-time |
+| ByteArray | string | binary |
+| URI, URL | string | uri |
 | List, Set, Array | array | - |
-| Map | object | - |
+| Map | object | `additionalProperties` |
 | Enum | string | enum values |
 | Value Class | (unwrapped type) | - |
+| Sealed class | `oneOf` + `discriminator` | - |
+
+Types are described in `components.schemas` and referenced with `$ref`, so a type shared by several
+endpoints is written once. `@SerialName`, `@Transient`, property order and default values are taken
+from the `kotlinx.serialization` descriptor of the type, so the schema describes what is actually
+written; a type that is not `@Serializable` is described by reflection instead.
+
+#### Properties the request does not carry
+
+A request type often has a property the handler fills in after the body was read — a locale, a
+principal. Mark it `@Transient`: `kotlinx` neither reads nor writes it, and the schema leaves it out.
+
+```kotlin
+@Serializable
+data class RegisterUser(val email: String) {
+    @Transient
+    lateinit var locale: Locale
+}
+```
+
+`lateinit` alone says that only for a type that is not `@Serializable`, where reflection is all
+there is to go by. In a `@Serializable` type a `lateinit var` is an element of the serializer like
+any other — `call.receive()` fails with `MissingFieldException` when the key is missing — so it is
+described as a required property, because that is what the endpoint accepts.
 
 #### Complex Types
 
@@ -242,8 +335,9 @@ The above will automatically generate:
         "type": "array",
         "items": { "type": "string", "enum": ["ADMIN", "USER", "GUEST"] }
       },
-      "metadata": { "type": "object" }
-    }
+      "metadata": { "type": "object", "additionalProperties": {} }
+    },
+    "required": ["id", "name", "email", "roles", "metadata"]
   }
 }
 ```

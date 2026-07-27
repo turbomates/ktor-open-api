@@ -8,30 +8,33 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Root(
     val openapi: String,
-    val info: InfoObject,
+    // Everything a document says about itself is settable: the title, the servers it is offered at
+    // and the tags its operations are grouped by are properties of the application, and the library
+    // has no way of knowing them.
+    var info: InfoObject,
     // `paths` is required by the spec, so it has to survive `encodeDefaults = false` even for an
     // application that documents no routes at all.
     @EncodeDefault val paths: MutableMap<String, PathItemObject> = mutableMapOf(),
     var servers: List<ServerObject>? = null,
     var components: Components? = null,
-    val security: List<SecuritySchemaObject>? = null,
-    val tags: List<TagObject>? = null,
-    val externalDocs: ExternalDocumentationObject? = null
+    var security: List<SecurityRequirement>? = null,
+    var tags: List<TagObject>? = null,
+    var externalDocs: ExternalDocumentationObject? = null
 )
 
 @Serializable
 data class InfoObject(
-    val title: String,
-    val description: String? = null,
-    val termsOfService: String? = null,
-    val contact: ContactObject? = null,
-    val license: LicenseObject? = null,
-    val version: String
+    var title: String,
+    var description: String? = null,
+    var termsOfService: String? = null,
+    var contact: ContactObject? = null,
+    var license: LicenseObject? = null,
+    var version: String
 )
 
 @Serializable
 data class TagObject(
     val name: String,
-    val description: String?,
-    val externalDocs: ExternalDocumentationObject?
+    val description: String? = null,
+    val externalDocs: ExternalDocumentationObject? = null
 )

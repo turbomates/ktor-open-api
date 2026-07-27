@@ -70,9 +70,8 @@ class RepeatedRegistrationTest {
         // one that declares `id` describes it on the operation, which the spec lets override it.
         val pathItem = parsed.openAPI.paths.getValue("/users/{id}")
         assertEquals(listOf("id"), pathItem.get.parameters.map { it.name })
-        // `number` rather than `integer` is C2, untouched here — the point is that the declared
-        // description survived instead of the generated `string` one.
-        assertEquals("number", pathItem.get.parameters.single().schema.type)
+        // The declared description survived instead of the generated `string` one.
+        assertEquals("integer", pathItem.get.parameters.single().schema.type)
     }
 
     @Test

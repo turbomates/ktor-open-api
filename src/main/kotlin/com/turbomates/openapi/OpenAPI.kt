@@ -3,30 +3,56 @@
 package com.turbomates.openapi
 
 import com.turbomates.openapi.spec.Components
+import com.turbomates.openapi.spec.ExternalDocumentationObject
 import com.turbomates.openapi.spec.InfoObject
-import com.turbomates.openapi.spec.MediaTypeObject
 import com.turbomates.openapi.spec.OperationObject
 import com.turbomates.openapi.spec.ParameterObject
 import com.turbomates.openapi.spec.PathItemObject
-import com.turbomates.openapi.spec.RequestBodyObject
-import com.turbomates.openapi.spec.ResponseObject
 import com.turbomates.openapi.spec.Root
-import com.turbomates.openapi.spec.SchemaObject
+import com.turbomates.openapi.spec.SecurityRequirement
+import com.turbomates.openapi.spec.SecuritySchemeObject
+import com.turbomates.openapi.spec.ServerObject
+import com.turbomates.openapi.spec.ServerVariableObject
+import com.turbomates.openapi.spec.TagObject
 import kotlinx.serialization.json.JsonElement
 import kotlin.reflect.KType
 
-class OpenAPI(var host: String) {
+class OpenAPI(host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
-    private val customTypes: MutableMap<KType, Type> = mutableMapOf()
+    private val schemas = SchemaRegistry()
+    private val operations = OperationFactory(schemas)
+    private val securitySchemes: MutableMap<String, SecuritySchemeObject> = mutableMapOf()
+    private val configuredServers: MutableList<ServerObject> = mutableListOf()
+
+    /**
+     * Where the API is served from, as the server the document lists until another one is given.
+     *
+     * A bare host — `api.example.com` — is not a URL, so a scheme is put in front of it: `http` for
+     * a local address, `https` for everything else. A value that already is a URL, absolute or
+     * relative, is left as it is. Call [server] to describe the servers in full instead.
+     */
+    var host: String = host
+        set(value) {
+            field = value
+            publishServers()
+        }
+
+    /** Metadata of the document — its title, version, description and the rest. */
+    val info: InfoObject
+        get() = root.info
+
+    init {
+        publishServers()
+    }
 
     fun addToPath(
         path: String,
         method: Method,
         responses: Map<Int, Type> = emptyMap(),
-        body: Type.Object? = null,
+        body: Type? = null,
         pathParams: Type.Object? = null,
         queryParams: Type.Object? = null,
-        tags: List<String> = emptyList()
+        operation: OperationDescription = OperationDescription()
     ) {
         var pathItemObject = root.paths[path]
         if (pathItemObject == null) {
@@ -36,57 +62,92 @@ class OpenAPI(var host: String) {
         val (pathParamsObjects, queryParamsObjects) = classifyParameters(path, pathParams, queryParams)
         val declaredParameters = pathParamsObjects + queryParamsObjects
         pathItemObject.documentPathTemplate(path, pathParamsObjects)
-        val tagsOrNull = tags.takeIf { it.isNotEmpty() }
 
         // A request body is only described for the methods that carry one; the rest keep the shape
         // they had before HEAD, OPTIONS and TRACE joined the enum. The body is dropped before the
         // merge as well, so that a method without one stays without one however many times its path
         // was registered.
-        fun OperationObject?.mergeOrCreate(documentsBody: Boolean = true): OperationObject {
-            val documentedBody = body?.takeIf { documentsBody }
-            return this?.merge(responses, documentedBody, declaredParameters, tags) ?: OperationObject(
-                responses.mapValues { it.value.toResponseObject() },
-                tags = tagsOrNull,
-                requestBody = documentedBody?.toRequestBodyObject(),
-                parameters = declaredParameters
+        fun describe(existing: OperationObject?, documentsBody: Boolean = true): OperationObject {
+            return operations.operation(
+                existing,
+                responses,
+                body.takeIf { documentsBody },
+                declaredParameters,
+                operation
             )
         }
 
         when (method) {
-            Method.GET -> pathItemObject.get = pathItemObject.get.mergeOrCreate(documentsBody = false)
-            Method.HEAD -> pathItemObject.head = pathItemObject.head.mergeOrCreate(documentsBody = false)
-            Method.OPTIONS -> pathItemObject.options = pathItemObject.options.mergeOrCreate(documentsBody = false)
-            Method.TRACE -> pathItemObject.trace = pathItemObject.trace.mergeOrCreate(documentsBody = false)
-            Method.POST -> pathItemObject.post = pathItemObject.post.mergeOrCreate()
-            Method.PUT -> pathItemObject.put = pathItemObject.put.mergeOrCreate()
-            Method.PATCH -> pathItemObject.patch = pathItemObject.patch.mergeOrCreate()
-            Method.DELETE -> pathItemObject.delete = pathItemObject.delete.mergeOrCreate()
+            Method.GET -> pathItemObject.get = describe(pathItemObject.get, documentsBody = false)
+            Method.HEAD -> pathItemObject.head = describe(pathItemObject.head, documentsBody = false)
+            Method.OPTIONS -> pathItemObject.options = describe(pathItemObject.options, documentsBody = false)
+            Method.TRACE -> pathItemObject.trace = describe(pathItemObject.trace, documentsBody = false)
+            Method.POST -> pathItemObject.post = describe(pathItemObject.post)
+            Method.PUT -> pathItemObject.put = describe(pathItemObject.put)
+            Method.PATCH -> pathItemObject.patch = describe(pathItemObject.patch)
+            Method.DELETE -> pathItemObject.delete = describe(pathItemObject.delete)
         }
+        publishComponents()
     }
 
+    /**
+     * Describes [model] in `components.schemas` under [name].
+     *
+     * Every use of the same type is a reference to this schema afterwards, [name] included — a
+     * model registered by hand keeps the name it was given instead of the one derived from the type.
+     */
     fun addModel(name: String, model: Type.Object) {
-        val components = root.components ?: Components()
-        root.components = components.copy(
-            schemas = components.schemas.orEmpty().plus(name to model.toSchemaObject())
-        )
+        schemas.addModel(name, model)
+        publishComponents()
     }
 
     fun setCustomClassType(kType: KType, type: Type) {
-        customTypes[kType] = type
+        schemas.setCustomClassType(kType, type)
     }
 
-    private fun Type.toResponseObject(): ResponseObject {
-        return ResponseObject(
-            "empty description",
-            content = mapOf(JSON_MEDIA_TYPE to MediaTypeObject(schema = toSchemaObject())),
-        )
+    /** Describes the document itself — `openApi.info { title = "Orders"; version = "2.0" }`. */
+    fun info(block: InfoObject.() -> Unit) {
+        root.info.apply(block)
     }
 
-    private fun Type.toRequestBodyObject(): RequestBodyObject {
-        return RequestBodyObject(
-            content = mapOf(JSON_MEDIA_TYPE to MediaTypeObject(schema = toSchemaObject())),
-            required = isRequired
-        )
+    /**
+     * Adds a server the API is offered at.
+     *
+     * The first call replaces the server derived from [host]: a document either describes its
+     * servers or falls back on the host it was built with, never both.
+     */
+    fun server(
+        url: String,
+        description: String? = null,
+        variables: Map<String, ServerVariableObject>? = null
+    ) {
+        configuredServers.add(ServerObject(url, description, variables))
+        publishServers()
+    }
+
+    /** Describes a tag the operations are grouped by. Operations may use tags described here or not. */
+    fun tag(name: String, description: String? = null, externalDocs: ExternalDocumentationObject? = null) {
+        root.tags = root.tags.orEmpty() + TagObject(name, description, externalDocs)
+    }
+
+    fun externalDocs(url: String, description: String? = null) {
+        root.externalDocs = ExternalDocumentationObject(url, description)
+    }
+
+    /** Offers a security scheme operations may require. Build one with [SecurityScheme]. */
+    fun securityScheme(name: String, scheme: SecuritySchemeObject) {
+        securitySchemes[name] = scheme
+        publishComponents()
+    }
+
+    /**
+     * Requires [requirements] of every operation that does not state its own.
+     *
+     * Satisfying any one of them is enough; pass none to say that the API is open by default,
+     * which is what an operation of a document without global security means anyway.
+     */
+    fun security(vararg requirements: SecurityRequirement) {
+        root.security = requirements.toList()
     }
 
     /**
@@ -119,34 +180,10 @@ class OpenAPI(var host: String) {
         return map {
             // A path parameter is part of the URL, so it can be neither optional nor null,
             // whatever the nullability of the property describing it.
-            val schema = it.type.toSchemaObject().let { schema -> if (isPath) schema.copy(nullable = false) else schema }
-            ParameterObject(it.name, schema = schema, required = isPath || it.type.isRequired, `in` = `in`.value)
-        }
-    }
-
-    private fun Type.toSchemaObject(): SchemaObject {
-        return when (this) {
-            is Type.String -> SchemaObject(type = "string", enum = this.values, example = this.example, nullable = this.isNullable)
-            is Type.Array -> SchemaObject(
-                type = "array",
-                items = this.type.toSchemaObject(),
-                enum = this.values,
-                nullable = this.isNullable
-            )
-            is Type.Object ->
-                if (customTypes.containsKey(this.returnType) && this.returnType != null) {
-                    customTypes.getValue(this.returnType).toSchemaObject()
-                } else {
-                    SchemaObject(
-                        type = "object",
-                        properties = this.properties.associate { it.name to it.type.toSchemaObject() },
-                        example = this.example,
-                        nullable = this.isNullable
-                    )
-                }
-
-            is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
-            is Type.Number -> SchemaObject(type = "number", nullable = this.isNullable)
+            val schema = schemas.schemaObject(it.type).let { schema -> if (isPath) schema.copy(nullable = false) else schema }
+            // A query parameter the caller may leave out is optional for the same reason a property
+            // with a default is: there is a value to fall back on.
+            ParameterObject(it.name, schema = schema, required = isPath || it.isRequired, `in` = `in`.value)
         }
     }
 
@@ -172,7 +209,7 @@ class OpenAPI(var host: String) {
             .map { name ->
                 ParameterObject(
                     name,
-                    schema = Type.String(nullable = false).toSchemaObject(),
+                    schema = schemas.schemaObject(Type.String(nullable = false)),
                     required = true,
                     `in` = INType.PATH.value
                 )
@@ -182,39 +219,48 @@ class OpenAPI(var host: String) {
         }
     }
 
-    private fun OperationObject.merge(
-        responses: Map<Int, Type>,
-        body: Type.Object? = null,
-        declaredParameters: List<ParameterObject> = emptyList(),
-        tags: List<String> = emptyList()
-    ): OperationObject {
-        // A parameter is identified by its name and location, and an operation may not list the same
-        // one twice — registering a path and a method again describes the same parameter, not a new
-        // one. The description already in the operation wins.
-        val parameters: List<ParameterObject> = parameters?.plus(declaredParameters)
-            ?.distinctBy { it.name to it.`in` }
-            ?: declaredParameters
-        val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
-        val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
-        val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
-        return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult, tags = mergedTags)
+    private fun publishComponents() {
+        root.components = (root.components ?: Components()).copy(
+            schemas = schemas.schemas.takeIf { it.isNotEmpty() },
+            securitySchemes = securitySchemes.toMap().takeIf { it.isNotEmpty() }
+        )
+    }
+
+    private fun publishServers() {
+        root.servers = configuredServers.toList().ifEmpty { listOf(ServerObject(host.asServerUrl())) }
+    }
+
+    private fun String.asServerUrl(): String {
+        if (contains(SCHEME_SEPARATOR) || startsWith("/")) {
+            return this
+        }
+        val scheme = if (LOCAL_HOSTS.any { this == it || startsWith("$it:") }) "http" else "https"
+        return "$scheme$SCHEME_SEPARATOR$this"
     }
 
     private companion object {
-        /** The only media type responses and request bodies are described with so far (see C11). */
-        const val JSON_MEDIA_TYPE = "application/json"
+        const val SCHEME_SEPARATOR = "://"
+        val LOCAL_HOSTS = listOf("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
     }
 }
 
 data class Property(
     val name: String,
-    val type: Type
+    val type: Type,
+    /**
+     * Whether the key has to be there at all, which is not the same as being allowed to be `null`.
+     *
+     * Unless said otherwise, a property is required exactly when it cannot be `null` — that is all
+     * a type alone can tell.
+     */
+    val isRequired: Boolean = !type.isNullable
 )
 
 enum class INType(val value: String) {
     PATH("path"),
     QUERY("query"),
-    HEADER("header")
+    HEADER("header"),
+    COOKIE("cookie")
 }
 
 sealed class Type(val isNullable: kotlin.Boolean = true) {
@@ -224,7 +270,8 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
     class String(
         val values: List<kotlin.String>? = null,
         val example: JsonElement? = null,
-        nullable: kotlin.Boolean = true
+        nullable: kotlin.Boolean = true,
+        val format: kotlin.String? = null
     ) : Type(nullable)
 
     class Array(val type: Type, val values: List<kotlin.String>? = null, nullable: kotlin.Boolean) : Type(nullable)
@@ -236,6 +283,67 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
         nullable: kotlin.Boolean
     ) : Type(nullable)
 
+    /**
+     * A type described elsewhere in the document.
+     *
+     * This is how a type that refers to itself is described: the schema of the enclosing object is
+     * built once, and the property that points back at it points at that schema instead of starting
+     * another copy of it.
+     */
+    class Ref(
+        val name: kotlin.String,
+        val returnType: KType,
+        nullable: kotlin.Boolean
+    ) : Type(nullable)
+
     class Boolean(nullable: kotlin.Boolean) : Type(nullable)
-    class Number(nullable: kotlin.Boolean) : Type(nullable)
+    class Number(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
+
+    /** A whole number, which OpenAPI keeps apart from `number`. */
+    class Integer(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
+
+    /**
+     * An object of keys that are not known in advance, each holding a [valueType].
+     *
+     * The keys of a JSON object are strings whatever the key type is, so only the value type is
+     * described.
+     */
+    class Map(val valueType: Type, nullable: kotlin.Boolean) : Type(nullable)
+
+    /**
+     * One of several types, told apart by [discriminator] when there is something to tell them
+     * apart by.
+     *
+     * [options] is keyed by the value the discriminator property carries for each of them — the
+     * serial name of the type, for a `sealed` hierarchy written by `kotlinx.serialization`.
+     */
+    class OneOf(
+        val options: kotlin.collections.Map<kotlin.String, Type>,
+        val discriminator: kotlin.String? = null,
+        val returnType: KType? = null,
+        nullable: kotlin.Boolean
+    ) : Type(nullable)
+
+    /** A value nothing is known about — an unresolved type parameter or a star projection. */
+    class Any(nullable: kotlin.Boolean = true) : Type(nullable)
+}
+
+/**
+ * Formats this library describes types with.
+ *
+ * `format` is an open string in OpenAPI: these are the ones that are generated on their own, and
+ * any other may be given through `customTypeDescription`.
+ */
+object Format {
+    const val INT32 = "int32"
+    const val INT64 = "int64"
+    const val FLOAT = "float"
+    const val DOUBLE = "double"
+    const val UUID = "uuid"
+    const val DATE = "date"
+    const val DATE_TIME = "date-time"
+    const val TIME = "time"
+    const val DURATION = "duration"
+    const val BINARY = "binary"
+    const val URI = "uri"
 }

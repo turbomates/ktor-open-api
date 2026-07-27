@@ -16,6 +16,7 @@ import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.serializer
 
 inline fun <reified TResponse : Any> Route.delete(
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.() -> TResponse
 ): Route {
     val route = method(HttpMethod.Delete) {
@@ -26,13 +27,15 @@ inline fun <reified TResponse : Any> Route.delete(
     openApi.addToPath(
         route.buildFullPath(),
         HttpMethod.Delete,
-        response = typeOf<TResponse>()
+        response = typeOf<TResponse>(),
+        operation = describeOperation(operation)
     )
     return route
 }
 
 inline fun <reified TResponse : Any> Route.delete(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.() -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Delete) {
@@ -43,7 +46,8 @@ inline fun <reified TResponse : Any> Route.delete(
     openApi.addToPath(
         route.buildFullPath(),
         HttpMethod.Delete,
-        response = typeOf<TResponse>()
+        response = typeOf<TResponse>(),
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -51,6 +55,7 @@ inline fun <reified TResponse : Any> Route.delete(
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TParams : Any> Route.delete(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TParams) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Delete) {
@@ -68,13 +73,15 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.delete(
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        operation = describeOperation(operation)
     )
     return route
 }
 
 inline fun <reified TResponse : Any, reified TBody : Any> Route.deleteWithBody(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TBody) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Delete) {
@@ -86,7 +93,8 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.deleteWithBody(
         route.buildFullPath(),
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
-        body = typeOf<TBody>()
+        body = typeOf<TBody>(),
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -94,6 +102,7 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.deleteWithBody(
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> Route.delete(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TPath, TQuery) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Delete) {
@@ -115,7 +124,8 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> 
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
         queryParams = typeOf<TQuery>(),
-        pathParams = typeOf<TPath>()
+        pathParams = typeOf<TPath>(),
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -123,6 +133,7 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> 
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any, reified TBody : Any> Route.delete(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TPath, TQuery, TBody) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Delete) {
@@ -152,7 +163,8 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any, 
         response = typeOf<TResponse>(),
         body = typeOf<TBody>(),
         pathParams = typeOf<TPath>(),
-        queryParams = typeOf<TQuery>()
+        queryParams = typeOf<TQuery>(),
+        operation = describeOperation(operation)
     )
     return route
 }

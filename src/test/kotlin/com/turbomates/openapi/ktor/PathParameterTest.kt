@@ -98,7 +98,9 @@ class PathParameterTest {
         val response = client.get("/openapi.json").bodyAsText()
 
         assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
-        assertContains(response, "{\"name\":\"id\",\"in\":\"path\",\"required\":true,\"schema\":{\"nullable\":false,\"type\":\"string\"}}")
+        val expected = "{\"name\":\"id\",\"in\":\"path\",\"required\":true," +
+            "\"schema\":{\"nullable\":false,\"type\":\"string\",\"format\":\"uuid\"}}"
+        assertContains(response, expected)
     }
 
     @Test
