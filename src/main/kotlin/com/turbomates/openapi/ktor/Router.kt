@@ -2,6 +2,7 @@
 
 package com.turbomates.openapi.ktor
 
+import com.turbomates.openapi.OperationDescription
 import com.turbomates.openapi.openApiKType
 import io.ktor.http.HttpMethod
 import io.ktor.server.application.plugin
@@ -21,7 +22,8 @@ fun OpenAPI.addToPath(
     response: KType? = null,
     body: KType? = null,
     pathParams: KType? = null,
-    queryParams: KType? = null
+    queryParams: KType? = null,
+    operation: OperationDescription = OperationDescription()
 ) {
     extendDocumentation { responseMap ->
         val documentedMethod = method.documentedMethod()
@@ -36,10 +38,21 @@ fun OpenAPI.addToPath(
                 response.run { responseMap(this).mapValues { it.value.openApiKType.type() } },
                 body?.openApiKType?.type(),
                 pathParams?.openApiKType?.objectType(),
-                queryParams?.openApiKType?.objectType()
+                queryParams?.openApiKType?.objectType(),
+                operation
             )
         }
     }
+}
+
+/**
+ * Reads an operation description off the DSL block a route was declared with.
+ *
+ * Called from the `inline` route builders, so it has to be public; there is nothing to call it for
+ * by hand.
+ */
+fun describeOperation(block: OperationBuilder.() -> Unit): OperationDescription {
+    return OperationBuilder().apply(block).build()
 }
 
 /**

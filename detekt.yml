@@ -113,8 +113,12 @@ naming:
   BooleanPropertyNaming:
     active: true
     allowedPattern: '^(is|has|are|should)'
+    # `deprecated` and `required` are the names OpenAPI gives these fields, and both the spec models
+    # and the DSL that fills them in are read next to the specification.
     excludes:
       - '**/Components.kt'
+      - '**/Operation.kt'
+      - '**/OperationBuilder.kt'
   ConstructorParameterNaming:
     active: true
     excludeClassPattern: 'SchemaObject|ParameterObject|SecuritySchemeObject|PathItemObject'

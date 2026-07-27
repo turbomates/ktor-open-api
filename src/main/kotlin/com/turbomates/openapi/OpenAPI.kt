@@ -4,16 +4,11 @@ package com.turbomates.openapi
 
 import com.turbomates.openapi.spec.Components
 import com.turbomates.openapi.spec.ExternalDocumentationObject
-import com.turbomates.openapi.spec.DiscriminatorObject
 import com.turbomates.openapi.spec.InfoObject
-import com.turbomates.openapi.spec.MediaTypeObject
 import com.turbomates.openapi.spec.OperationObject
 import com.turbomates.openapi.spec.ParameterObject
 import com.turbomates.openapi.spec.PathItemObject
-import com.turbomates.openapi.spec.RequestBodyObject
-import com.turbomates.openapi.spec.ResponseObject
 import com.turbomates.openapi.spec.Root
-import com.turbomates.openapi.spec.SchemaObject
 import com.turbomates.openapi.spec.SecurityRequirement
 import com.turbomates.openapi.spec.SecuritySchemeObject
 import com.turbomates.openapi.spec.ServerObject
@@ -21,16 +16,11 @@ import com.turbomates.openapi.spec.ServerVariableObject
 import com.turbomates.openapi.spec.TagObject
 import kotlinx.serialization.json.JsonElement
 import kotlin.reflect.KType
-import kotlin.reflect.full.withNullability
-import kotlin.reflect.jvm.jvmErasure
 
 class OpenAPI(host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
-    private val customTypes: MutableMap<KType, Type> = mutableMapOf()
-
-    /** Component name every described type is registered under, keyed by the type itself. */
-    private val componentNames: MutableMap<KType, String> = mutableMapOf()
-    private val schemas: MutableMap<String, SchemaObject> = mutableMapOf()
+    private val schemas = SchemaRegistry()
+    private val operations = OperationFactory(schemas)
     private val securitySchemes: MutableMap<String, SecuritySchemeObject> = mutableMapOf()
     private val configuredServers: MutableList<ServerObject> = mutableListOf()
 
@@ -62,7 +52,7 @@ class OpenAPI(host: String) {
         body: Type? = null,
         pathParams: Type.Object? = null,
         queryParams: Type.Object? = null,
-        tags: List<String> = emptyList()
+        operation: OperationDescription = OperationDescription()
     ) {
         var pathItemObject = root.paths[path]
         if (pathItemObject == null) {
@@ -72,32 +62,32 @@ class OpenAPI(host: String) {
         val (pathParamsObjects, queryParamsObjects) = classifyParameters(path, pathParams, queryParams)
         val declaredParameters = pathParamsObjects + queryParamsObjects
         pathItemObject.documentPathTemplate(path, pathParamsObjects)
-        val tagsOrNull = tags.takeIf { it.isNotEmpty() }
 
         // A request body is only described for the methods that carry one; the rest keep the shape
         // they had before HEAD, OPTIONS and TRACE joined the enum. The body is dropped before the
         // merge as well, so that a method without one stays without one however many times its path
         // was registered.
-        fun OperationObject?.mergeOrCreate(documentsBody: Boolean = true): OperationObject {
-            val documentedBody = body?.takeIf { documentsBody }
-            return this?.merge(responses, documentedBody, declaredParameters, tags) ?: OperationObject(
-                responses.toResponseObjects(),
-                tags = tagsOrNull,
-                requestBody = documentedBody?.toRequestBodyObject(),
-                parameters = declaredParameters
+        fun describe(existing: OperationObject?, documentsBody: Boolean = true): OperationObject {
+            return operations.operation(
+                existing,
+                responses,
+                body.takeIf { documentsBody },
+                declaredParameters,
+                operation
             )
         }
 
         when (method) {
-            Method.GET -> pathItemObject.get = pathItemObject.get.mergeOrCreate(documentsBody = false)
-            Method.HEAD -> pathItemObject.head = pathItemObject.head.mergeOrCreate(documentsBody = false)
-            Method.OPTIONS -> pathItemObject.options = pathItemObject.options.mergeOrCreate(documentsBody = false)
-            Method.TRACE -> pathItemObject.trace = pathItemObject.trace.mergeOrCreate(documentsBody = false)
-            Method.POST -> pathItemObject.post = pathItemObject.post.mergeOrCreate()
-            Method.PUT -> pathItemObject.put = pathItemObject.put.mergeOrCreate()
-            Method.PATCH -> pathItemObject.patch = pathItemObject.patch.mergeOrCreate()
-            Method.DELETE -> pathItemObject.delete = pathItemObject.delete.mergeOrCreate()
+            Method.GET -> pathItemObject.get = describe(pathItemObject.get, documentsBody = false)
+            Method.HEAD -> pathItemObject.head = describe(pathItemObject.head, documentsBody = false)
+            Method.OPTIONS -> pathItemObject.options = describe(pathItemObject.options, documentsBody = false)
+            Method.TRACE -> pathItemObject.trace = describe(pathItemObject.trace, documentsBody = false)
+            Method.POST -> pathItemObject.post = describe(pathItemObject.post)
+            Method.PUT -> pathItemObject.put = describe(pathItemObject.put)
+            Method.PATCH -> pathItemObject.patch = describe(pathItemObject.patch)
+            Method.DELETE -> pathItemObject.delete = describe(pathItemObject.delete)
         }
+        publishComponents()
     }
 
     /**
@@ -107,13 +97,12 @@ class OpenAPI(host: String) {
      * model registered by hand keeps the name it was given instead of the one derived from the type.
      */
     fun addModel(name: String, model: Type.Object) {
-        model.returnType?.let { componentNames[it.withNullability(false)] = name }
-        schemas[name] = model.objectSchemaObject(nullable = false)
+        schemas.addModel(name, model)
         publishComponents()
     }
 
     fun setCustomClassType(kType: KType, type: Type) {
-        customTypes[kType] = type
+        schemas.setCustomClassType(kType, type)
     }
 
     /** Describes the document itself — `openApi.info { title = "Orders"; version = "2.0" }`. */
@@ -162,30 +151,6 @@ class OpenAPI(host: String) {
     }
 
     /**
-     * The responses of an operation, keyed the way the document holds them.
-     *
-     * A status code is a string there, since `default` — the response covering every code not
-     * listed — is a key of the same map and no number at all.
-     */
-    private fun Map<Int, Type>.toResponseObjects(): Map<String, ResponseObject> {
-        return entries.associate { it.key.toString() to it.value.toResponseObject() }
-    }
-
-    private fun Type.toResponseObject(): ResponseObject {
-        return ResponseObject(
-            "empty description",
-            content = mapOf(JSON_MEDIA_TYPE to MediaTypeObject(schema = toSchemaObject())),
-        )
-    }
-
-    private fun Type.toRequestBodyObject(): RequestBodyObject {
-        return RequestBodyObject(
-            content = mapOf(JSON_MEDIA_TYPE to MediaTypeObject(schema = toSchemaObject())),
-            required = isRequired
-        )
-    }
-
-    /**
      * Splits the parameters of an operation into path and query ones by name.
      *
      * A property describes a path parameter when its name is a variable of the path template, and a
@@ -215,165 +180,11 @@ class OpenAPI(host: String) {
         return map {
             // A path parameter is part of the URL, so it can be neither optional nor null,
             // whatever the nullability of the property describing it.
-            val schema = it.type.toSchemaObject().let { schema -> if (isPath) schema.copy(nullable = false) else schema }
+            val schema = schemas.schemaObject(it.type).let { schema -> if (isPath) schema.copy(nullable = false) else schema }
             // A query parameter the caller may leave out is optional for the same reason a property
             // with a default is: there is a value to fall back on.
             ParameterObject(it.name, schema = schema, required = isPath || it.isRequired, `in` = `in`.value)
         }
-    }
-
-    private fun Type.toSchemaObject(): SchemaObject {
-        return when (this) {
-            is Type.String -> SchemaObject(
-                type = "string",
-                format = this.format,
-                enum = this.values,
-                example = this.example,
-                nullable = this.isNullable
-            )
-            is Type.Array -> SchemaObject(
-                type = "array",
-                items = this.type.toSchemaObject(),
-                enum = this.values,
-                nullable = this.isNullable
-            )
-            is Type.Object -> when {
-                this.returnType != null && customTypes.containsKey(this.returnType) ->
-                    customTypes.getValue(this.returnType).toSchemaObject()
-                // A type known by reflection is described once in `components` and referenced from
-                // everywhere it is used; one made up on the spot has nothing to be keyed by, so it
-                // stays where it is.
-                this.returnType != null ->
-                    componentSchemaObject(this.returnType, this.isNullable) { objectSchemaObject(nullable = false) }
-
-                else -> objectSchemaObject(nullable = this.isNullable)
-            }
-
-            is Type.OneOf ->
-                if (this.returnType != null) {
-                    componentSchemaObject(this.returnType, this.isNullable) { oneOfSchemaObject() }
-                } else {
-                    oneOfSchemaObject()
-                }
-
-            is Type.Map -> SchemaObject(
-                type = OBJECT_TYPE,
-                additionalProperties = this.valueType.toSchemaObject(),
-                nullable = this.isNullable
-            )
-
-            is Type.Ref -> referenceSchemaObject(componentName(this.returnType), this.isNullable)
-            is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
-            is Type.Number -> SchemaObject(type = "number", format = this.format, nullable = this.isNullable)
-            is Type.Integer -> SchemaObject(type = "integer", format = this.format, nullable = this.isNullable)
-            // An empty schema is how OpenAPI describes a value it knows nothing about.
-            is Type.Any -> SchemaObject(nullable = this.isNullable)
-        }
-    }
-
-    private fun Type.Object.objectSchemaObject(nullable: kotlin.Boolean?): SchemaObject {
-        return SchemaObject(
-            type = OBJECT_TYPE,
-            properties = properties.associate { it.name to it.type.toSchemaObject() },
-            required = properties.filter { it.isRequired }.map { it.name }.takeIf { it.isNotEmpty() },
-            example = example,
-            nullable = nullable
-        )
-    }
-
-    /**
-     * A schema of one of the [Type.OneOf.options], told apart by the discriminator when there is
-     * one.
-     *
-     * The mapping is written out even though the values are serial names: a generator has no way
-     * of guessing which schema a value stands for, and the names of the components are ours.
-     */
-    private fun Type.OneOf.oneOfSchemaObject(): SchemaObject {
-        val optionSchemas = options.mapValues { it.value.toSchemaObject() }
-        return SchemaObject(
-            oneOf = optionSchemas.values.toList(),
-            discriminator = discriminator?.let { property ->
-                DiscriminatorObject(
-                    property,
-                    optionSchemas.mapNotNull { (value, schema) -> schema.`$ref`?.let { value to it } }.toMap()
-                )
-            }
-        )
-    }
-
-    /**
-     * Registers [schema] in `components.schemas` under the name of [type] and returns a reference
-     * to it.
-     *
-     * The schema itself is never nullable: it describes the type, while being allowed to be `null`
-     * is a property of the place the type is used at, and the same type is used in both ways. The
-     * name is taken before [schema] is built, so that a type referring to itself finds the name of
-     * the schema it is part of instead of describing it over again.
-     */
-    private fun componentSchemaObject(type: KType, nullable: kotlin.Boolean, schema: () -> SchemaObject): SchemaObject {
-        val name = componentName(type)
-        if (!schemas.containsKey(name)) {
-            schemas[name] = schema()
-            publishComponents()
-        }
-        return referenceSchemaObject(name, nullable)
-    }
-
-    /**
-     * A reference to a component schema, made nullable where the use site asks for it.
-     *
-     * A `$ref` ignores everything next to it in OpenAPI 3.0, so nullability cannot be stated
-     * alongside — it has to wrap the reference instead.
-     */
-    private fun referenceSchemaObject(name: String, nullable: kotlin.Boolean): SchemaObject {
-        val reference = SchemaObject(`$ref` = "$COMPONENT_SCHEMA_PATH$name")
-        return if (nullable) SchemaObject(nullable = true, allOf = listOf(reference)) else reference
-    }
-
-    /**
-     * Component name of [type], assigned once and kept.
-     *
-     * The name has to be unique within the document and may only contain letters, digits and
-     * `.`, `-`, `_`, so it is built from the name of the class and of its type arguments, and a
-     * counter is added when two different types happen to arrive at the same name.
-     */
-    private fun componentName(type: KType): String {
-        val key = type.withNullability(false)
-        componentNames[key]?.let { return it }
-        val base = key.componentBaseName()
-        var name = base
-        var attempt = 1
-        while (componentNames.containsValue(name)) {
-            attempt++
-            name = "$base$attempt"
-        }
-        componentNames[key] = name
-        return name
-    }
-
-    private fun KType.componentBaseName(): String {
-        val arguments = arguments.mapNotNull { it.type?.jvmErasure?.simpleName }.joinToString("")
-        return FORBIDDEN_IN_COMPONENT_NAME.replace(jvmErasure.simpleName.orEmpty() + arguments, "")
-            .ifEmpty { DEFAULT_COMPONENT_NAME }
-    }
-
-    private fun publishComponents() {
-        root.components = (root.components ?: Components()).copy(
-            schemas = schemas.toMap().takeIf { it.isNotEmpty() },
-            securitySchemes = securitySchemes.toMap().takeIf { it.isNotEmpty() }
-        )
-    }
-
-    private fun publishServers() {
-        root.servers = configuredServers.toList().ifEmpty { listOf(ServerObject(host.asServerUrl())) }
-    }
-
-    private fun String.asServerUrl(): String {
-        if (contains(SCHEME_SEPARATOR) || startsWith("/")) {
-            return this
-        }
-        val scheme = if (LOCAL_HOSTS.any { this == it || startsWith("$it:") }) "http" else "https"
-        return "$scheme$SCHEME_SEPARATOR$this"
     }
 
     /** Methods a path item can describe. */
@@ -398,7 +209,7 @@ class OpenAPI(host: String) {
             .map { name ->
                 ParameterObject(
                     name,
-                    schema = Type.String(nullable = false).toSchemaObject(),
+                    schema = schemas.schemaObject(Type.String(nullable = false)),
                     required = true,
                     `in` = INType.PATH.value
                 )
@@ -408,35 +219,28 @@ class OpenAPI(host: String) {
         }
     }
 
-    private fun OperationObject.merge(
-        responses: Map<Int, Type>,
-        body: Type? = null,
-        declaredParameters: List<ParameterObject> = emptyList(),
-        tags: List<String> = emptyList()
-    ): OperationObject {
-        // A parameter is identified by its name and location, and an operation may not list the same
-        // one twice — registering a path and a method again describes the same parameter, not a new
-        // one. The description already in the operation wins.
-        val parameters: List<ParameterObject> = parameters?.plus(declaredParameters)
-            ?.distinctBy { it.name to it.`in` }
-            ?: declaredParameters
-        val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
-        val responsesResult = this.responses + responses.toResponseObjects()
-        val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
-        return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult, tags = mergedTags)
+    private fun publishComponents() {
+        root.components = (root.components ?: Components()).copy(
+            schemas = schemas.schemas.takeIf { it.isNotEmpty() },
+            securitySchemes = securitySchemes.toMap().takeIf { it.isNotEmpty() }
+        )
+    }
+
+    private fun publishServers() {
+        root.servers = configuredServers.toList().ifEmpty { listOf(ServerObject(host.asServerUrl())) }
+    }
+
+    private fun String.asServerUrl(): String {
+        if (contains(SCHEME_SEPARATOR) || startsWith("/")) {
+            return this
+        }
+        val scheme = if (LOCAL_HOSTS.any { this == it || startsWith("$it:") }) "http" else "https"
+        return "$scheme$SCHEME_SEPARATOR$this"
     }
 
     private companion object {
-        /** The only media type responses and request bodies are described with so far (see C11). */
-        const val JSON_MEDIA_TYPE = "application/json"
         const val SCHEME_SEPARATOR = "://"
         val LOCAL_HOSTS = listOf("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
-        const val COMPONENT_SCHEMA_PATH = "#/components/schemas/"
-        const val OBJECT_TYPE = "object"
-
-        /** A component name may only hold `[a-zA-Z0-9._-]`, and a class name may hold more. */
-        val FORBIDDEN_IN_COMPONENT_NAME = Regex("[^A-Za-z0-9._-]")
-        const val DEFAULT_COMPONENT_NAME = "Schema"
     }
 }
 
@@ -455,7 +259,8 @@ data class Property(
 enum class INType(val value: String) {
     PATH("path"),
     QUERY("query"),
-    HEADER("header")
+    HEADER("header"),
+    COOKIE("cookie")
 }
 
 sealed class Type(val isNullable: kotlin.Boolean = true) {

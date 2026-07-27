@@ -15,7 +15,7 @@ import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.serializer
 
 inline fun <reified TResponse : Any> Route.get(
-    tags: List<String> = emptyList(),
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.() -> TResponse
 ): Route {
     val route = method(HttpMethod.Get) {
@@ -26,13 +26,15 @@ inline fun <reified TResponse : Any> Route.get(
     openApi.addToPath(
         route.buildFullPath(),
         HttpMethod.Get,
-        response = typeOf<TResponse>()
+        response = typeOf<TResponse>(),
+        operation = describeOperation(operation)
     )
     return route
 }
 
 inline fun <reified TResponse : Any> Route.get(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.() -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Get) {
@@ -44,6 +46,7 @@ inline fun <reified TResponse : Any> Route.get(
         route.buildFullPath(),
         HttpMethod.Get,
         response = typeOf<TResponse>(),
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -51,6 +54,7 @@ inline fun <reified TResponse : Any> Route.get(
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TParams : Any> Route.get(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TParams) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Get) {
@@ -69,7 +73,8 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.get(
         HttpMethod.Get,
         response = typeOf<TResponse>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -77,6 +82,7 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.get(
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> Route.get(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TPath, TQuery) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Get) {
@@ -98,7 +104,8 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> 
         HttpMethod.Get,
         response = typeOf<TResponse>(),
         pathParams = typeOf<TPath>(),
-        queryParams = typeOf<TQuery>()
+        queryParams = typeOf<TQuery>(),
+        operation = describeOperation(operation)
     )
     return route
 }

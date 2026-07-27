@@ -16,6 +16,7 @@ import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.serializer
 
 inline fun <reified TResponse : Any> Route.patch(
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.() -> TResponse
 ): Route {
     val route = method(HttpMethod.Patch) {
@@ -26,13 +27,15 @@ inline fun <reified TResponse : Any> Route.patch(
     openApi.addToPath(
         route.buildFullPath(),
         HttpMethod.Patch,
-        response = typeOf<TResponse>()
+        response = typeOf<TResponse>(),
+        operation = describeOperation(operation)
     )
     return route
 }
 
 inline fun <reified TResponse : Any> Route.patch(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.() -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Patch) {
@@ -43,13 +46,15 @@ inline fun <reified TResponse : Any> Route.patch(
     openApi.addToPath(
         route.buildFullPath(),
         HttpMethod.Patch,
-        response = typeOf<TResponse>()
+        response = typeOf<TResponse>(),
+        operation = describeOperation(operation)
     )
     return route
 }
 
 inline fun <reified TResponse : Any, reified TBody : Any> Route.patch(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TBody) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Patch) {
@@ -61,7 +66,8 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.patch(
         route.buildFullPath(),
         HttpMethod.Patch,
         response = typeOf<TResponse>(),
-        body = typeOf<TBody>()
+        body = typeOf<TBody>(),
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -69,6 +75,7 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.patch(
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPatch(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TParams) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Patch) {
@@ -86,7 +93,8 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPatch(
         HttpMethod.Patch,
         response = typeOf<TResponse>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -94,6 +102,7 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPatch(
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TBody : Any, reified TParams : Any> Route.patch(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TBody, TParams) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Patch) {
@@ -112,7 +121,8 @@ inline fun <reified TResponse : Any, reified TBody : Any, reified TParams : Any>
         response = typeOf<TResponse>(),
         body = typeOf<TBody>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null
+        queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
+        operation = describeOperation(operation)
     )
     return route
 }
@@ -120,6 +130,7 @@ inline fun <reified TResponse : Any, reified TBody : Any, reified TParams : Any>
 @OptIn(InternalSerializationApi::class)
 inline fun <reified TResponse : Any, reified TBody : Any, reified TQuery : Any, reified TPath : Any> Route.patch(
     path: String,
+    noinline operation: OperationBuilder.() -> Unit = {},
     noinline body: suspend RoutingContext.(TBody, TPath, TQuery) -> TResponse
 ): Route {
     val route = route(path, HttpMethod.Patch) {
@@ -148,7 +159,8 @@ inline fun <reified TResponse : Any, reified TBody : Any, reified TQuery : Any, 
         response = typeOf<TResponse>(),
         body = typeOf<TBody>(),
         queryParams = typeOf<TQuery>(),
-        pathParams = typeOf<TPath>()
+        pathParams = typeOf<TPath>(),
+        operation = describeOperation(operation)
     )
     return route
 }
