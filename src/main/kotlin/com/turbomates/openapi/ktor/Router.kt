@@ -29,8 +29,12 @@ fun OpenAPI.addToPath(
             addToPath(
                 path,
                 documentedMethod,
-                response.run { responseMap(this).mapValues { it.value.openApiKType.objectType() } },
-                body?.openApiKType?.objectType(),
+                // A response and a body are described whatever they are — a list, a primitive, an
+                // enum or a value class are as legitimate at the top level as an object is. The
+                // parameters of an operation are the one place that does need an object: they are
+                // taken apart property by property.
+                response.run { responseMap(this).mapValues { it.value.openApiKType.type() } },
+                body?.openApiKType?.type(),
                 pathParams?.openApiKType?.objectType(),
                 queryParams?.openApiKType?.objectType()
             )

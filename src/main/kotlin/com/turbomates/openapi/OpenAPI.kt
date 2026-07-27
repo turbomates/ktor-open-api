@@ -14,16 +14,22 @@ import com.turbomates.openapi.spec.Root
 import com.turbomates.openapi.spec.SchemaObject
 import kotlinx.serialization.json.JsonElement
 import kotlin.reflect.KType
+import kotlin.reflect.full.withNullability
+import kotlin.reflect.jvm.jvmErasure
 
 class OpenAPI(var host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
     private val customTypes: MutableMap<KType, Type> = mutableMapOf()
 
+    /** Component name every described type is registered under, keyed by the type itself. */
+    private val componentNames: MutableMap<KType, String> = mutableMapOf()
+    private val schemas: MutableMap<String, SchemaObject> = mutableMapOf()
+
     fun addToPath(
         path: String,
         method: Method,
         responses: Map<Int, Type> = emptyMap(),
-        body: Type.Object? = null,
+        body: Type? = null,
         pathParams: Type.Object? = null,
         queryParams: Type.Object? = null,
         tags: List<String> = emptyList()
@@ -64,11 +70,16 @@ class OpenAPI(var host: String) {
         }
     }
 
+    /**
+     * Describes [model] in `components.schemas` under [name].
+     *
+     * Every use of the same type is a reference to this schema afterwards, [name] included — a
+     * model registered by hand keeps the name it was given instead of the one derived from the type.
+     */
     fun addModel(name: String, model: Type.Object) {
-        val components = root.components ?: Components()
-        root.components = components.copy(
-            schemas = components.schemas.orEmpty().plus(name to model.toSchemaObject())
-        )
+        model.returnType?.let { componentNames[it.withNullability(false)] = name }
+        schemas[name] = model.objectSchemaObject(nullable = false)
+        publishComponents()
     }
 
     fun setCustomClassType(kType: KType, type: Type) {
@@ -133,21 +144,90 @@ class OpenAPI(var host: String) {
                 enum = this.values,
                 nullable = this.isNullable
             )
-            is Type.Object ->
-                if (customTypes.containsKey(this.returnType) && this.returnType != null) {
+            is Type.Object -> when {
+                this.returnType != null && customTypes.containsKey(this.returnType) ->
                     customTypes.getValue(this.returnType).toSchemaObject()
-                } else {
-                    SchemaObject(
-                        type = "object",
-                        properties = this.properties.associate { it.name to it.type.toSchemaObject() },
-                        example = this.example,
-                        nullable = this.isNullable
-                    )
-                }
+                // A type known by reflection is described once in `components` and referenced from
+                // everywhere it is used; one made up on the spot has nothing to be keyed by, so it
+                // stays where it is.
+                this.returnType != null -> componentSchemaObject(this.returnType)
+                else -> objectSchemaObject(nullable = this.isNullable)
+            }
 
+            is Type.Ref -> referenceSchemaObject(componentName(this.returnType), this.isNullable)
             is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
             is Type.Number -> SchemaObject(type = "number", nullable = this.isNullable)
+            // An empty schema is how OpenAPI describes a value it knows nothing about.
+            is Type.Any -> SchemaObject(nullable = this.isNullable)
         }
+    }
+
+    private fun Type.Object.objectSchemaObject(nullable: kotlin.Boolean?): SchemaObject {
+        return SchemaObject(
+            type = "object",
+            properties = properties.associate { it.name to it.type.toSchemaObject() },
+            example = example,
+            nullable = nullable
+        )
+    }
+
+    /**
+     * Registers the schema of this object in `components.schemas` and returns a reference to it.
+     *
+     * The schema itself is never nullable: it describes the type, while being allowed to be `null`
+     * is a property of the place the type is used at, and the same type is used in both ways. The
+     * name is taken before the properties are described, so that a type referring to itself finds
+     * the name of the schema it is part of instead of describing it over again.
+     */
+    private fun Type.Object.componentSchemaObject(type: KType): SchemaObject {
+        val name = componentName(type)
+        if (!schemas.containsKey(name)) {
+            schemas[name] = objectSchemaObject(nullable = false)
+            publishComponents()
+        }
+        return referenceSchemaObject(name, nullable = isNullable)
+    }
+
+    /**
+     * A reference to a component schema, made nullable where the use site asks for it.
+     *
+     * A `$ref` ignores everything next to it in OpenAPI 3.0, so nullability cannot be stated
+     * alongside — it has to wrap the reference instead.
+     */
+    private fun referenceSchemaObject(name: String, nullable: kotlin.Boolean): SchemaObject {
+        val reference = SchemaObject(`$ref` = "$COMPONENT_SCHEMA_PATH$name")
+        return if (nullable) SchemaObject(nullable = true, allOf = listOf(reference)) else reference
+    }
+
+    /**
+     * Component name of [type], assigned once and kept.
+     *
+     * The name has to be unique within the document and may only contain letters, digits and
+     * `.`, `-`, `_`, so it is built from the name of the class and of its type arguments, and a
+     * counter is added when two different types happen to arrive at the same name.
+     */
+    private fun componentName(type: KType): String {
+        val key = type.withNullability(false)
+        componentNames[key]?.let { return it }
+        val base = key.componentBaseName()
+        var name = base
+        var attempt = 1
+        while (componentNames.containsValue(name)) {
+            attempt++
+            name = "$base$attempt"
+        }
+        componentNames[key] = name
+        return name
+    }
+
+    private fun KType.componentBaseName(): String {
+        val arguments = arguments.mapNotNull { it.type?.jvmErasure?.simpleName }.joinToString("")
+        return FORBIDDEN_IN_COMPONENT_NAME.replace(jvmErasure.simpleName.orEmpty() + arguments, "")
+            .ifEmpty { DEFAULT_COMPONENT_NAME }
+    }
+
+    private fun publishComponents() {
+        root.components = (root.components ?: Components()).copy(schemas = schemas.toMap())
     }
 
     /** Methods a path item can describe. */
@@ -184,7 +264,7 @@ class OpenAPI(var host: String) {
 
     private fun OperationObject.merge(
         responses: Map<Int, Type>,
-        body: Type.Object? = null,
+        body: Type? = null,
         declaredParameters: List<ParameterObject> = emptyList(),
         tags: List<String> = emptyList()
     ): OperationObject {
@@ -203,6 +283,11 @@ class OpenAPI(var host: String) {
     private companion object {
         /** The only media type responses and request bodies are described with so far (see C11). */
         const val JSON_MEDIA_TYPE = "application/json"
+        const val COMPONENT_SCHEMA_PATH = "#/components/schemas/"
+
+        /** A component name may only hold `[a-zA-Z0-9._-]`, and a class name may hold more. */
+        val FORBIDDEN_IN_COMPONENT_NAME = Regex("[^A-Za-z0-9._-]")
+        const val DEFAULT_COMPONENT_NAME = "Schema"
     }
 }
 
@@ -236,6 +321,22 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
         nullable: kotlin.Boolean
     ) : Type(nullable)
 
+    /**
+     * A type described elsewhere in the document.
+     *
+     * This is how a type that refers to itself is described: the schema of the enclosing object is
+     * built once, and the property that points back at it points at that schema instead of starting
+     * another copy of it.
+     */
+    class Ref(
+        val name: kotlin.String,
+        val returnType: KType,
+        nullable: kotlin.Boolean
+    ) : Type(nullable)
+
     class Boolean(nullable: kotlin.Boolean) : Type(nullable)
     class Number(nullable: kotlin.Boolean) : Type(nullable)
+
+    /** A value nothing is known about — an unresolved type parameter or a star projection. */
+    class Any(nullable: kotlin.Boolean = true) : Type(nullable)
 }

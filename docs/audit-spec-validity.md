@@ -31,10 +31,10 @@ path-параметров. Практически всё за пределами
 | A8 | невалидно | Поля без дефолтов сериализуются как явные `null` | — |
 | A9 | игнорируется | `security` операции уходит под ключом `securitySchemaObject` | — |
 | A10 | невалидно | `PathItemObject.servers`, `CallbackObject` описаны неверными типами | — |
-| B1 | крэш | Рекурсивные типы → `StackOverflowError` | — |
-| B2 | крэш | `List<T>`/`String` в ответе → `InvalidTypeForOpenApiType` | — |
-| B3 | крэш | value class / enum в ответе → `ClassCastException` | — |
-| B4 | крэш | Raw-генерики и `List<*>` → `NullPointerException` | — |
+| B1 | ✅ исправлено | Рекурсивные типы → `StackOverflowError` | — |
+| B2 | ✅ исправлено | `List<T>`/`String` в ответе → `InvalidTypeForOpenApiType` | — |
+| B3 | ✅ исправлено | value class / enum в ответе → `ClassCastException` | — |
+| B4 | ✅ исправлено | Raw-генерики и `List<*>` → `NullPointerException` | — |
 | B5 | ✅ исправлено | `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException` | — |
 | C1 | неверно | Нет `required` — все поля схемы опциональны | — |
 | C2 | неверно | `Int`/`Long` → `number`, `format` отсутствует в модели вовсе | — |
@@ -42,7 +42,7 @@ path-параметров. Практически всё за пределами
 | C4 | неверно | `java.time.*`, `ByteArray` рефлексируются во внутренности | — |
 | C5 | неверно | `sealed class` → пустой `{}`, без `oneOf`/`discriminator` | — |
 | C6 | неверно | Вычисляемые getter'ы попадают в схему, порядок полей не декларационный | — |
-| C7 | пробел | Нет `$ref`/`components` — схемы инлайнятся, `addModel` не вызывается | — |
+| C7 | ✅ исправлено | Нет `$ref`/`components` — схемы инлайнятся, `addModel` не вызывается | — |
 | C8 | пробел | `description` ответов всегда `"empty description"` | — |
 | C9 | пробел | `tags` принимаются в `get()` и молча выбрасываются | — |
 | C10 | пробел | `info.title`/`version` нельзя изменить, `host` не используется | — |
@@ -361,7 +361,7 @@ attribute components.securitySchemes.BearerAuth.scopes is unexpected
 Все пять случаев — исключение при регистрации роута, то есть приложение падает на старте либо
 `/openapi.json` отдаёт 500.
 
-### B1. Рекурсивные типы → `StackOverflowError`
+### B1. Рекурсивные типы → `StackOverflowError` — ✅ исправлено
 
 ```kotlin
 data class Node(val name: String, val children: List<Node>)   // StackOverflowError
@@ -373,7 +373,16 @@ data class MutualB(val a: MutualA)                            // StackOverflowEr
 исключительно прямую ссылку на себя того же типа. `List<Node>` уже не ловится. Это следствие C7:
 без `$ref` рекурсивную схему выразить нечем.
 
-### B2. Коллекция или примитив в ответе → `InvalidTypeForOpenApiType`
+**Сделано** вместе с C7 — описание см. там. Коротко: `OpenApiKType` держит множество типов, которые
+описываются прямо сейчас; повторная встреча типа из этого множества даёт `Type.Ref` — ссылку на
+схему, частью которой этот тип и является, — вместо бесконечного спуска. Ловятся все три формы:
+прямая ссылка на себя (`val parent: Node?`), ссылка через коллекцию (`val children: List<Node>`) и
+взаимная рекурсия.
+
+Заодно снят костыль `type != memberType`: свойство того же типа больше не выбрасывается из схемы
+молча — теперь его есть чем описать.
+
+### B2. Коллекция или примитив в ответе → `InvalidTypeForOpenApiType` — ✅ исправлено
 
 ```kotlin
 get<List<User>>("/users") { ... }   // Invalid java.util.List<User> to build Object
@@ -383,7 +392,18 @@ get<String>("/ping") { "pong" }     // Invalid java.lang.String to build Object
 `objectType()` (`OpenApiKType.kt:44`) требует, чтобы верхний уровень был объектом. Список в
 ответе — абсолютно рядовой REST-кейс; сейчас его нужно оборачивать в wrapper-класс.
 
-### B3. value class и enum в ответе → `ClassCastException`
+**Сделано**: у `OpenApiKType` появилась точка входа `type()`, которая описывает тип любой формы —
+объект, коллекцию, enum, value class, примитив. `Router.addToPath` (`Router.kt`) описывает через
+неё и ответ, и тело запроса: массив в теле (bulk create) ровно так же обычен, как и в ответе.
+Параметры операции по-прежнему идут через `objectType()` — их разбирают по свойствам, так что
+объект там нужен по существу, а не по случайности.
+
+```json
+"/users":{"get":{"responses":{"200":{"content":{"application/json":{
+  "schema":{"nullable":false,"type":"array","items":{"$ref":"#/components/schemas/User"}}}}}}}}
+```
+
+### B3. value class и enum в ответе → `ClassCastException` — ✅ исправлено
 
 `objectType()` делает безусловный `buildType(name, original) as Type.Object`
 (`OpenApiKType.kt:48`), а `buildType` для value class разворачивает во вложенный тип
@@ -395,7 +415,24 @@ get<Money>("/price") { ... }   // Type$Number cannot be cast to Type$Object
 get<Color>("/color") { ... }   // Type$String cannot be cast to Type$Object
 ```
 
-### B4. Raw-генерики и star-projection → `NullPointerException`
+**Сделано**: тем же `type()`, что и B2, — enum в ответе даёт `string` со списком значений, value
+class даёт то, что он оборачивает. Сам `objectType()` контракт сохранил, но `ClassCastException`
+больше не бросает: если тип описан не объектом, летит тот же внятный `InvalidTypeForOpenApiType`,
+что и для коллекций.
+
+Побочный эффект, который стоит отметить отдельно: value class теперь разворачивается везде, а не
+только на верхнем уровне. Раньше свойство-value class уходило в ветку `buildObjectType` и
+описывалось объектом (`{"price":{"type":"object","properties":{"amount":{"type":"number"}}}}`),
+хотя `kotlinx.serialization` отдаёт голое значение (`{"price":1}`). Теперь спека совпадает с JSON.
+
+Заодно перестал рефлексироваться во внутренности `Map` на верхнем уровне: раньше `objectType()` для
+мапы описывал `entries`/`keys`/`size`/`values`, теперь мапа идёт по той же ветке, что и
+свойство-мапа (какой она остаётся кривовато — это C3).
+
+Тесты (на B2 и B3): `TopLevelTypeTest` — `List<T>`, `String`, enum и value class в ответе, `List<T>`
+в теле запроса, value class в свойстве, и `objectType()` на каждом из этих типов с внятной ошибкой.
+
+### B4. Raw-генерики и star-projection → `NullPointerException` — ✅ исправлено
 
 `buildGenericTypes` (`OpenApiKType.kt:31`) делает `type.arguments[index].type!!`, а у
 star-projection `type == null`:
@@ -406,6 +443,33 @@ data class WithStar(val anything: List<*>)      // NPE
 ```
 
 Аналогичные `!!` есть в ветке коллекций (`OpenApiKType.kt:93`) и map (`:110`, `:112`).
+
+**Сделано**: `!!` убраны все, а неизвестный тип описывается пустой схемой — в OpenAPI это ровно
+«что угодно». Для этого в `Type` добавлен вариант `Any`.
+
+- `buildGenericTypes` пропускает параметр, для которого аргумента нет (raw-тип) или он не назван
+  (star-projection), вместо `arguments[index].type!!`; свойства такого параметра описываются как
+  «что угодно»;
+- элемент коллекции: `List<*>` и коллекция, у которой ни аргументов, ни подходящего супертипа
+  (`abstract class Bag : Collection<String>` — не `List` и не `Set`, а именно этот список
+  проверяет старый код через `first {}`), дают `items: {}` вместо NPE и `NoSuchElementException`;
+- `Map`: аргументы читаются через `getOrNull`; у `Map<*, *>` имени ключа нет, поэтому свойство не
+  выдумывается вовсе;
+- неразрешённый параметр типа (`T` там, где подстановки не нашлось) описывается как «что угодно», а
+  не раскладывается по свойствам своей верхней границы;
+- `enumConstants` у типа, который является подтипом `Enum<*>`, но не самим enum-классом, может быть
+  `null` — теперь это отсутствие списка значений, а не NPE.
+
+```json
+"WithStar":{"type":"object","properties":{
+  "anything":{"nullable":false,"type":"array","items":{"nullable":true}},
+  "map":{"nullable":false,"type":"object","properties":{}},
+  "generic":{"$ref":"#/components/schemas/Generic"}}}
+```
+
+Тесты: `UnknownTypeTest` — star-projection в параметре типа, в коллекции и в мапе, коллекция без
+читаемого элемента, коллекция с элементом в супертипе, и целый документ со звёздочками, проходящий
+валидатор.
 
 ### B5. `HEAD`/`OPTIONS`/`TRACE` → `IllegalArgumentException` — ✅ исправлено
 
@@ -474,8 +538,9 @@ data class Simple(val id: UUID, val name: String, val age: Int, val nick: String
 - **`SchemaObject` не имеет поля `format` вообще.** Поэтому `UUID` — это просто `string`, а
   `date`/`date-time`/`email`/`binary` выразить нельзя даже через `customTypeDescription`:
   максимум, что можно получить, — безформатный `string`.
-- Заодно в `SchemaObject` отсутствуют `title`, `description`, `default`, `oneOf`/`anyOf`/`allOf`,
-  `minLength`/`maxLength`/`pattern`, `minimum`/`maximum`, `minItems`/`maxItems`/`uniqueItems`.
+- Заодно в `SchemaObject` отсутствуют `title`, `description`, `default`, `oneOf`/`anyOf`,
+  `minLength`/`maxLength`/`pattern`, `minimum`/`maximum`, `minItems`/`maxItems`/`uniqueItems`
+  (`allOf` появился на этапе 2 — им заворачивается nullable-ссылка, см. C7).
 
 `Type` (`OpenAPI.kt:170`) тоже не имеет места для формата — правку нужно делать в обеих моделях.
 
@@ -555,12 +620,48 @@ data class Dto(
 То есть спека объявляет несуществующее поле `internal`, называет `user_id` как `userId` и не
 описывает фактическое имя вовсе.
 
-### C7. Нет `$ref` и `components`
+### C7. Нет `$ref` и `components` — ✅ исправлено
 
 `toSchemaObject` (`OpenAPI.kt:113`) всегда инлайнит схему целиком. `addModel` (`OpenAPI.kt:81`)
 умеет писать в `components.schemas`, но из Ktor-слоя не вызывается никогда — `components` в
 сгенерированной спеке всегда пуст. Следствия: рекурсивные типы невозможны (B1), общий DTO в
 20 эндпоинтах дублируется 20 раз, спека распухает, в Swagger UI нет раздела Schemas.
+
+**Сделано**: объект, у которого есть исходный `KType`, описывается в `components.schemas` один раз,
+а на месте использования стоит `$ref`. Это же — единственный способ описать рекурсию (B1).
+
+```json
+"components":{"schemas":{"Node":{"nullable":false,"type":"object","properties":{
+  "name":{"nullable":false,"type":"string"},
+  "children":{"nullable":false,"type":"array","items":{"$ref":"#/components/schemas/Node"}},
+  "parent":{"nullable":true,"allOf":[{"$ref":"#/components/schemas/Node"}]}}}}}
+```
+
+Детали, каждая из которых стоила отдельного решения:
+
+- **Nullable-ссылка.** В OpenAPI 3.0 всё, что стоит рядом с `$ref`, игнорируется, поэтому
+  `{"$ref":..., "nullable":true}` не работает — ссылку приходится заворачивать:
+  `{"nullable":true,"allOf":[{"$ref":...}]}`. Ради этого в `SchemaObject` добавлено поле `allOf`.
+  Сама схема в `components` всегда non-nullable: она описывает тип, а право быть `null`
+  принадлежит месту использования — один и тот же тип используется и так, и так.
+- **Имена компонентов.** Собираются из simpleName класса и simpleName его аргументов:
+  `Generic<String>` → `GenericString`, так что разные подстановки одного класса не затирают друг
+  друга. Полное имя не годится: в ключах `components` допустимы только `[a-zA-Z0-9._-]`, а
+  `javaType.typeName` вложенного класса содержит `$`. Совпадение имён у разных типов разводится
+  счётчиком (`User`, `User2`) — имя за типом закрепляется один раз и дальше не меняется.
+- **Имя берётся до описания свойств**, иначе тип, ссылающийся на себя, не нашёл бы имени схемы, в
+  которую он же и попадает.
+- **`addModel` перестал быть декорацией**: он кладёт схему под заданным именем и закрепляет это имя
+  за типом, так что все последующие использования ссылаются именно на него, а не на имя, выведенное
+  из класса.
+- **Что по-прежнему инлайнится**: `Type.Object` без `returnType` — описание из
+  `customTypeDescription` и объект-мапа. Опознать их не по чему, и общего имени у них нет.
+  `customTypeDescription` проверяется раньше компонентов, так что заданное вручную описание
+  подставляется на месте, как и раньше.
+
+Тесты: `SchemaComponentTest` — рекурсия через коллекцию, взаимная рекурсия, nullable-ссылка, один
+тип на двух эндпоинтах (одна схема, две ссылки), два разных типа с одинаковым simpleName,
+`addModel` со своим именем, пустой документ без `components` вовсе.
 
 ### C8. Описания ответов — заглушка
 
@@ -615,10 +716,11 @@ overload'ах.
 ### Этап 2 — убрать крэши
 
 6. **`components` + `$ref`** с реестром уже построенных схем — одновременно закрывает B1
-   (рекурсия) и C7 (дублирование). Ключевая правка архитектуры.
+   (рекурсия) и C7 (дублирование). Ключевая правка архитектуры. — ✅ сделано.
 7. **Верхний уровень ответа любого типа** — `toSchemaObject` вместо `objectType()`: массивы,
-   примитивы, enum, value class (B2, B3).
-8. **Убрать `!!`** в `buildGenericTypes`/коллекциях/map, star-projection → пустая схема (B4).
+   примитивы, enum, value class (B2, B3). — ✅ сделано (заодно и тело запроса).
+8. **Убрать `!!`** в `buildGenericTypes`/коллекциях/map, star-projection → пустая схема (B4). —
+   ✅ сделано.
 
 ### Этап 3 — привести смысл в соответствие
 
@@ -653,6 +755,7 @@ overload'ах.
 
 Чтобы картина была честной: плоские DTO из `String`/`Number`/`Boolean`/`UUID`, nullable-поля,
 enum (включая nullable), вложенные объекты, коллекции объектов и примитивов, дженерики с
-явным аргументом (включая подстановку проекций), value class как **свойство**, слияние
-операций по одному пути и разным методам, `customTypeDescription` для объектных типов,
-раздача `/openapi.json` и Swagger UI через webjars — всё это генерируется и проходит валидатор.
+явным аргументом (включая подстановку проекций), value class как свойство (после этапа 2 — уже
+и с правильным описанием, см. B3), слияние операций по одному пути и разным методам,
+`customTypeDescription` для объектных типов, раздача `/openapi.json` и Swagger UI через
+webjars — всё это генерируется и проходит валидатор.

@@ -28,6 +28,7 @@ data class SchemaObject(
     val externalDocs: ExternalDocumentationObject? = null,
     val example: JsonElement? = null,
     val type: String? = null,
+    val allOf: List<SchemaObject>? = null,
     val properties: Map<String, SchemaObject>? = null,
     val additionalProperties: SchemaObject? = null,
     val items: SchemaObject? = null,

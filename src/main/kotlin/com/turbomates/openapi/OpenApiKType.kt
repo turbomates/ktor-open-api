@@ -6,8 +6,10 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
+import kotlin.reflect.KTypeParameter
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.withNullability
 import kotlin.reflect.jvm.javaType
 import kotlin.reflect.jvm.jvmErasure
 import kotlin.reflect.typeOf
@@ -15,6 +17,16 @@ import kotlin.time.Duration
 
 class OpenApiKType(private val original: KType) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
+
+    /**
+     * Types whose object description is being built right now.
+     *
+     * A type that refers to itself — directly, through a collection or through another type — would
+     * otherwise be described forever. Meeting a type from this set means a cycle, and the only way
+     * to describe a cycle is a reference to the schema being built ([Type.Ref]).
+     */
+    private val building: MutableSet<KType> = mutableSetOf()
+
     private val KType.primitiveType: Type
         get() {
             return when {
@@ -24,14 +36,21 @@ class OpenApiKType(private val original: KType) {
                 isSubtypeOf(typeOf<Number?>()) -> Type.Number(isMarkedNullable)
                 isSubtypeOf(typeOf<Boolean?>()) -> Type.Boolean(isMarkedNullable)
                 isSubtypeOf(typeOf<Duration?>()) -> Type.String(nullable = isMarkedNullable)
-                else -> throw UnhandledTypeException(jvmErasure.simpleName!!)
+                else -> throw UnhandledTypeException(jvmErasure.simpleName ?: toString())
             }
         }
 
+    /**
+     * Actual types behind the generic parameters of [type].
+     *
+     * A raw type carries no arguments at all and a star projection carries no type, so neither is
+     * mapped: such a parameter has no known type, and the properties using it are described as
+     * accepting anything.
+     */
     private fun buildGenericTypes(type: KType): Map<String, KType> {
         val types = mutableMapOf<String, KType>()
         type.jvmErasure.typeParameters.forEachIndexed { index, kTypeParameter ->
-            types[kTypeParameter.name] = type.arguments[index].type!!
+            type.arguments.getOrNull(index)?.type?.let { types[kTypeParameter.name] = it }
         }
 
         return types
@@ -41,11 +60,20 @@ class OpenApiKType(private val original: KType) {
         return original.isSubtypeOf(openApiKType.original)
     }
 
+    /**
+     * Description of the type, whatever it is — an object, a collection, an enum, a value class or
+     * a primitive.
+     *
+     * Anything a route may respond with or accept as a body, in other words. Use [objectType] only
+     * where the description has to be an object, such as the parameters of an operation.
+     */
+    fun type(name: String = original.javaType.typeName): Type {
+        return buildType(name, original)
+    }
+
     fun objectType(name: String = original.javaType.typeName): Type.Object {
-        if (original.isCollection() || original.isPrimitive()) {
-            throw InvalidTypeForOpenApiType(original.javaType.typeName, Type.Object::class.simpleName!!)
-        }
-        return buildType(name, original) as Type.Object
+        return buildType(name, original) as? Type.Object
+            ?: throw InvalidTypeForOpenApiType(original.javaType.typeName, Type.Object::class.simpleName!!)
     }
 
     fun getArgumentProjectionType(type: KType): OpenApiKType {
@@ -59,87 +87,102 @@ class OpenApiKType(private val original: KType) {
         return other is OpenApiKType && other.original == original
     }
 
-    private fun buildType(name: String, type: KType): Type {
-        if (type.isCollection() || type.isPrimitive() || type.isEnum()) {
-            return buildType(type)
-        }
+    override fun hashCode(): Int {
+        return original.hashCode()
+    }
 
-        val kclass = type.classifier as? KClass<*>
-        if (kclass != null && kclass.isValue) {
-            return buildType(type.jvmErasure.memberProperties.first().returnType)
+    fun buildObjectType(name: String, type: KType): Type.Object {
+        val key = type.withNullability(false)
+        building.add(key)
+        try {
+            val descriptions = type.jvmErasure.memberProperties
+                .filterNot { it.isLateinit }
+                .map { property -> Property(property.name, buildType(property.returnType)) }
+            return Type.Object(name, descriptions, returnType = type, nullable = type.isMarkedNullable)
+        } finally {
+            building.remove(key)
+        }
+    }
+
+    private fun buildType(memberType: KType): Type {
+        return buildType(null, memberType)
+    }
+
+    private fun buildType(name: String?, type: KType): Type {
+        val resolved = type.resolveProjection()
+        // An unresolved type parameter (a raw type or a star projection) says nothing about the
+        // value, and an empty schema is exactly how OpenAPI spells "anything".
+        if (resolved.classifier is KTypeParameter) {
+            return Type.Any(resolved.isMarkedNullable)
+        }
+        return when {
+            resolved.isCollection() -> resolved.arrayType()
+            resolved.isMap() -> resolved.mapType()
+            resolved.isEnum() -> resolved.enumType()
+            resolved.isPrimitive() -> resolved.primitiveType
+            resolved.isValue() -> resolved.valueType()
+            else -> objectOrReference(name ?: resolved.objectName(), resolved)
+        }
+    }
+
+    /** The schema of an object already being described is a reference to it, not another copy. */
+    private fun objectOrReference(name: String, type: KType): Type {
+        val key = type.withNullability(false)
+        if (building.contains(key)) {
+            return Type.Ref(name, key, nullable = type.isMarkedNullable)
         }
         return buildObjectType(name, type)
     }
 
-    fun buildObjectType(name: String, type: KType): Type.Object {
-        val descriptions = mutableListOf<Property>()
-        type.jvmErasure.memberProperties.forEach { property ->
-            val memberType = property.returnType
-            // ToDo think about parametrization of this option
-            if (!property.isLateinit && type != memberType) {
-                descriptions.add(Property(property.name, buildType(memberType)))
-            }
-        }
-        return Type.Object(name, descriptions, returnType = type, nullable = type.isMarkedNullable)
+    private fun KType.arrayType(): Type {
+        val element = elementType()
+        val items = if (element == null) Type.Any() else buildType(element)
+        return Type.Array(items, nullable = isMarkedNullable)
     }
 
-    private fun buildType(memberType: KType): Type {
-        return when {
-            memberType.isCollection() -> {
-                var collectionType = if (memberType.arguments.isEmpty()) {
-                    memberType.jvmErasure.supertypes.first {
-                        it.isSubtypeOf(typeOf<Set<*>>()) || it.isSubtypeOf(typeOf<List<*>>())
-                    }.arguments.first().type!!
-                } else {
-                    memberType.arguments.first().type!!
-                }
-                if (projectionTypes.containsKey(collectionType.toString())) {
-                    collectionType = projectionTypes.getValue(collectionType.toString())
-                }
-                when {
-                    collectionType.isPrimitive() -> Type.Array(collectionType.primitiveType, nullable = memberType.isMarkedNullable)
-                    collectionType.isEnum() -> Type.Array(buildType(collectionType), nullable = memberType.isMarkedNullable)
-                    else -> Type.Array(
-                        buildType(collectionType.jvmErasure.simpleName!!, collectionType),
-                        nullable = memberType.isMarkedNullable
-                    )
-                }
-            }
-
-            memberType.isMap() -> {
-                val argType = memberType.arguments[0].type!!
-                val firstType = projectionTypes.getOrDefault(argType.toString(), argType)
-                val argSecondType = memberType.arguments[1].type!!
-                val secondType = projectionTypes.getOrDefault(argSecondType.toString(), argSecondType)
-                Type.Object(
-                    "map",
-                    properties = listOf(
-                        Property(
-                            firstType.jvmErasure.simpleName!!,
-                            buildType(secondType)
-                        )
-                    ),
-                    nullable = memberType.isMarkedNullable
-                )
-            }
-
-            memberType.isEnum() -> {
-                val values = memberType.jvmErasure.java.enumConstants
-                Type.String(values.map { it.toString() }, nullable = memberType.isMarkedNullable)
-            }
-
-            memberType.isPrimitive() ->
-                memberType.primitiveType
-
-            else -> {
-                val projectionType = projectionTypes.getOrDefault(memberType.toString(), memberType)
-                if (projectionType != memberType) {
-                    buildType(projectionType.jvmErasure.simpleName!!, projectionType)
-                } else {
-                    buildObjectType(memberType.jvmErasure.simpleName!!, memberType)
-                }
-            }
+    /**
+     * Type of the elements of a collection, or `null` when it is not known — a star projection
+     * (`List<*>`) or a raw type whose supertypes carry no argument either.
+     */
+    private fun KType.elementType(): KType? {
+        if (arguments.isNotEmpty()) {
+            return arguments.first().type
         }
+        return jvmErasure.supertypes
+            .firstOrNull { it.isSubtypeOf(typeOf<Set<*>>()) || it.isSubtypeOf(typeOf<List<*>>()) }
+            ?.arguments?.firstOrNull()?.type
+    }
+
+    // ToDo a map is an object with `additionalProperties`, not an object with a property named
+    //  after the key type (C3 of the audit); the shape is kept as it was, it just no longer fails
+    //  on a map whose arguments are not known.
+    private fun KType.mapType(): Type {
+        val keyName = arguments.getOrNull(0)?.type?.resolveProjection()?.jvmErasure?.simpleName
+        val valueType = arguments.getOrNull(1)?.type
+        val properties = keyName?.let { name ->
+            listOf(Property(name, valueType?.let { buildType(it) } ?: Type.Any()))
+        }.orEmpty()
+        return Type.Object(MAP_NAME, properties, nullable = isMarkedNullable)
+    }
+
+    private fun KType.enumType(): Type.String {
+        val values = jvmErasure.java.enumConstants?.map { it.toString() }.orEmpty()
+        return Type.String(values.takeIf { it.isNotEmpty() }, nullable = isMarkedNullable)
+    }
+
+    /** A value class is described by what it wraps — that is what ends up in the JSON. */
+    private fun KType.valueType(): Type {
+        val backingType = jvmErasure.memberProperties.firstOrNull()?.returnType
+            ?: return Type.Any(isMarkedNullable)
+        return buildType(backingType)
+    }
+
+    private fun KType.resolveProjection(): KType {
+        return projectionTypes[toString()] ?: this
+    }
+
+    private fun KType.objectName(): String {
+        return jvmErasure.simpleName ?: toString()
     }
 
     private fun KType.isPrimitive(): Boolean {
@@ -155,11 +198,19 @@ class OpenApiKType(private val original: KType) {
     }
 
     private fun KType.isMap(): Boolean {
-        return isSubtypeOf(typeOf<Map<*, *>>())
+        return isSubtypeOf(typeOf<Map<*, *>?>())
     }
 
     private fun KType.isEnum(): Boolean {
-        return this.javaClass.isEnum || isSubtypeOf(typeOf<Enum<*>?>())
+        return isSubtypeOf(typeOf<Enum<*>?>())
+    }
+
+    private fun KType.isValue(): Boolean {
+        return (classifier as? KClass<*>)?.isValue == true
+    }
+
+    private companion object {
+        const val MAP_NAME = "map"
     }
 }
 
