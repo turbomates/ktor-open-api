@@ -1,12 +1,17 @@
 package com.turbomates.openapi.spec
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Root(
     val openapi: String,
     val info: InfoObject,
-    val paths: MutableMap<String, PathItemObject> = mutableMapOf(),
+    // `paths` is required by the spec, so it has to survive `encodeDefaults = false` even for an
+    // application that documents no routes at all.
+    @EncodeDefault val paths: MutableMap<String, PathItemObject> = mutableMapOf(),
     var servers: List<ServerObject>? = null,
     var components: Components? = null,
     val security: List<SecuritySchemaObject>? = null,

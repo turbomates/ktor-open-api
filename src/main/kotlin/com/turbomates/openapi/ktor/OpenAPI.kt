@@ -13,7 +13,6 @@ import io.ktor.server.response.respondText
 import io.ktor.server.webjars.Webjars
 import io.ktor.util.AttributeKey
 import kotlin.reflect.KType
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI
 

@@ -55,11 +55,10 @@ class DescriptionBuilderTest {
     fun `custom response code with template class`() = testApplication {
         install(OpenAPI) {
             responseCodeMap = {
-                when {
-                    this.isSubtypeOf(typeOf<TestTemplateClass<*>>()) -> mapOf(
-                        400 to typeOf<TestTemplateClass<Any>>()
-                    )
-                    else -> mapOf(200 to typeOf<TestTemplateClass<Any>>())
+                if (this.isSubtypeOf(typeOf<TestTemplateClass<*>>())) {
+                    mapOf(400 to typeOf<TestTemplateClass<Any>>())
+                } else {
+                    mapOf(200 to typeOf<TestTemplateClass<Any>>())
                 }
             }
         }
