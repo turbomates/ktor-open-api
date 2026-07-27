@@ -81,6 +81,17 @@ class HttpMethodTest {
         assertEquals(null, api.root.paths.getValue("/users").options?.requestBody)
     }
 
+    @Test
+    fun `a method without a body keeps none when its path is registered again`() {
+        val api = SwaggerOpenAPI("localhost")
+        val body = typeOf<TestRequest>().openApiKType.objectType()
+        repeat(2) {
+            api.addToPath("/users", SwaggerOpenAPI.Method.GET, body = body)
+        }
+
+        assertEquals(null, api.root.paths.getValue("/users").get?.requestBody)
+    }
+
     @Serializable
     data class TestResponse(val isDone: Boolean)
 

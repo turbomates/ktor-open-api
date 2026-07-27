@@ -11,7 +11,6 @@ import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
 import kotlin.reflect.typeOf
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -36,7 +35,7 @@ class RepeatedRegistrationTest {
     }
 
     @Test
-    fun `path and query parameters of the same name keep both places`() = testApplication {
+    fun `a property named after a template variable stays a single path parameter`() = testApplication {
         install(OpenAPI)
         routing {
             get<TestResponse, TestPageable>("/users/{page}") { TestResponse(true) }
@@ -45,9 +44,12 @@ class RepeatedRegistrationTest {
 
         val response = client.get("/openapi.json").bodyAsText()
 
-        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
-        assertContains(response, "\"name\":\"page\",\"in\":\"path\"")
-        assertEquals(1, Regex("\"name\":\"page\"").findAll(response).count())
+        val parsed = OpenAPIParser().readContents(response, null, null)
+        assertEquals(emptyList(), parsed.messages)
+        // `page` names the path template variable, so it describes the path parameter and nothing
+        // else; `size` has no counterpart in the path and stays in the query.
+        val parameters = parsed.openAPI.paths.getValue("/users/{page}").get.parameters
+        assertEquals(listOf("page" to "path", "size" to "query"), parameters.map { it.name to it.`in` })
     }
 
     @Test

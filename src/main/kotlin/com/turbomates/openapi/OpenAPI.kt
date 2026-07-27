@@ -39,12 +39,15 @@ class OpenAPI(var host: String) {
         val tagsOrNull = tags.takeIf { it.isNotEmpty() }
 
         // A request body is only described for the methods that carry one; the rest keep the shape
-        // they had before HEAD, OPTIONS and TRACE joined the enum.
+        // they had before HEAD, OPTIONS and TRACE joined the enum. The body is dropped before the
+        // merge as well, so that a method without one stays without one however many times its path
+        // was registered.
         fun OperationObject?.mergeOrCreate(documentsBody: Boolean = true): OperationObject {
-            return this?.merge(responses, body, declaredParameters, tags) ?: OperationObject(
+            val documentedBody = body?.takeIf { documentsBody }
+            return this?.merge(responses, documentedBody, declaredParameters, tags) ?: OperationObject(
                 responses.mapValues { it.value.toResponseObject() },
                 tags = tagsOrNull,
-                requestBody = body?.toRequestBodyObject().takeIf { documentsBody },
+                requestBody = documentedBody?.toRequestBodyObject(),
                 parameters = declaredParameters
             )
         }
@@ -92,8 +95,12 @@ class OpenAPI(var host: String) {
      * A property describes a path parameter when its name is a variable of the path template, and a
      * query parameter otherwise — the shape of the path says nothing about the properties that come
      * with it, so a filter passed alongside a templated path stays in the query where it belongs.
-     * A name can only mean one thing per operation, so it is described once even when both
-     * [pathParams] and [queryParams] mention it.
+     *
+     * OpenAPI identifies a parameter by its name together with its location, so the same name may
+     * legitimately appear in both. This classification is narrower on purpose: a property describes
+     * one parameter, in one location, so a name mentioned by both [pathParams] and [queryParams] is
+     * described once — under the path template when it matches one, and in the query otherwise.
+     * Ktor resolves such a name to the path segment at request time anyway.
      */
     private fun classifyParameters(
         path: String,
