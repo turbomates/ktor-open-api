@@ -83,9 +83,27 @@ class TypeFormatTest {
         assertEquals("integer" to "int32", properties.getValue("counts").items().typeAndFormat())
     }
 
+    @Test
+    fun `a map describes the values it holds, not a property named after its key`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<WithMap>("/map") { error("not called") }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        // The spec used to claim `meta` was an object with a field called `String`.
+        val meta = response.document().property("WithMap", "meta")
+        assertEquals("object", meta.type())
+        assertEquals("integer" to "int32", meta.additionalProperties().typeAndFormat())
+    }
+
     private fun JsonObject.typeAndFormat(): Pair<String?, String?> = type() to format()
 
     private fun JsonObject.items(): JsonObject = getValue("items").jsonObject
+
+    private fun JsonObject.additionalProperties(): JsonObject = getValue("additionalProperties").jsonObject
 
     data class Numbers(
         val int: Int,
@@ -107,4 +125,6 @@ class TypeFormatTest {
     )
 
     data class Arrays(val names: Array<String>, val counts: IntArray)
+
+    data class WithMap(val meta: Map<String, Int>)
 }

@@ -39,11 +39,11 @@ class UnknownTypeTest {
     }
 
     @Test
-    fun `a star projected map is described without inventing a property`() {
+    fun `a star projected map says nothing about its values`() {
         val type = typeOf<WithStar>().openApiKType.objectType()
 
-        val map = assertIs<Type.Object>(type.property("map"))
-        assertEquals(emptyList(), map.properties)
+        val map = assertIs<Type.Map>(type.property("map"))
+        assertIs<Type.Any>(map.valueType)
     }
 
     @Test

@@ -267,16 +267,17 @@ class OpenApiKType(private val original: KType) {
         return jvmErasure.java.componentType?.kotlin?.createType()
     }
 
-    // ToDo a map is an object with `additionalProperties`, not an object with a property named
-    //  after the key type (C3 of the audit); the shape is kept as it was, it just no longer fails
-    //  on a map whose arguments are not known.
+    /**
+     * A map is an object whose keys are not known in advance.
+     *
+     * It used to be described as an object with a single property named after the key *class*, so
+     * the spec claimed a `Map<String, Int>` was an object with a field called `String` — a field no
+     * response ever has. The value type belongs in `additionalProperties`; the key type is not
+     * described at all, since the keys of a JSON object are strings whatever it is.
+     */
     private fun KType.mapType(): Type {
-        val keyName = arguments.getOrNull(0)?.type?.resolveProjection()?.jvmErasure?.simpleName
         val valueType = arguments.getOrNull(1)?.type
-        val properties = keyName?.let { name ->
-            listOf(Property(name, valueType?.let { buildType(it) } ?: Type.Any()))
-        }.orEmpty()
-        return Type.Object(MAP_NAME, properties, nullable = isMarkedNullable)
+        return Type.Map(valueType?.let { buildType(it) } ?: Type.Any(), nullable = isMarkedNullable)
     }
 
     private fun KType.enumType(): Type.String {

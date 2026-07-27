@@ -162,6 +162,12 @@ class OpenAPI(var host: String) {
                 else -> objectSchemaObject(nullable = this.isNullable)
             }
 
+            is Type.Map -> SchemaObject(
+                type = OBJECT_TYPE,
+                additionalProperties = this.valueType.toSchemaObject(),
+                nullable = this.isNullable
+            )
+
             is Type.Ref -> referenceSchemaObject(componentName(this.returnType), this.isNullable)
             is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
             is Type.Number -> SchemaObject(type = "number", format = this.format, nullable = this.isNullable)
@@ -173,7 +179,7 @@ class OpenAPI(var host: String) {
 
     private fun Type.Object.objectSchemaObject(nullable: kotlin.Boolean?): SchemaObject {
         return SchemaObject(
-            type = "object",
+            type = OBJECT_TYPE,
             properties = properties.associate { it.name to it.type.toSchemaObject() },
             required = properties.filter { it.isRequired }.map { it.name }.takeIf { it.isNotEmpty() },
             example = example,
@@ -294,6 +300,7 @@ class OpenAPI(var host: String) {
         /** The only media type responses and request bodies are described with so far (see C11). */
         const val JSON_MEDIA_TYPE = "application/json"
         const val COMPONENT_SCHEMA_PATH = "#/components/schemas/"
+        const val OBJECT_TYPE = "object"
 
         /** A component name may only hold `[a-zA-Z0-9._-]`, and a class name may hold more. */
         val FORBIDDEN_IN_COMPONENT_NAME = Regex("[^A-Za-z0-9._-]")
@@ -357,6 +364,14 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
 
     /** A whole number, which OpenAPI keeps apart from `number`. */
     class Integer(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
+
+    /**
+     * An object of keys that are not known in advance, each holding a [valueType].
+     *
+     * The keys of a JSON object are strings whatever the key type is, so only the value type is
+     * described.
+     */
+    class Map(val valueType: Type, nullable: kotlin.Boolean) : Type(nullable)
 
     /** A value nothing is known about — an unresolved type parameter or a star projection. */
     class Any(nullable: kotlin.Boolean = true) : Type(nullable)
