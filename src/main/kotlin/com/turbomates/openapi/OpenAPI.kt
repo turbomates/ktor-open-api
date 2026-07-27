@@ -52,7 +52,7 @@ class OpenAPI(var host: String) {
         fun OperationObject?.mergeOrCreate(documentsBody: Boolean = true): OperationObject {
             val documentedBody = body?.takeIf { documentsBody }
             return this?.merge(responses, documentedBody, declaredParameters, tags) ?: OperationObject(
-                responses.mapValues { it.value.toResponseObject() },
+                responses.toResponseObjects(),
                 tags = tagsOrNull,
                 requestBody = documentedBody?.toRequestBodyObject(),
                 parameters = declaredParameters
@@ -85,6 +85,16 @@ class OpenAPI(var host: String) {
 
     fun setCustomClassType(kType: KType, type: Type) {
         customTypes[kType] = type
+    }
+
+    /**
+     * The responses of an operation, keyed the way the document holds them.
+     *
+     * A status code is a string there, since `default` — the response covering every code not
+     * listed — is a key of the same map and no number at all.
+     */
+    private fun Map<Int, Type>.toResponseObjects(): Map<String, ResponseObject> {
+        return entries.associate { it.key.toString() to it.value.toResponseObject() }
     }
 
     private fun Type.toResponseObject(): ResponseObject {
@@ -322,7 +332,7 @@ class OpenAPI(var host: String) {
             ?.distinctBy { it.name to it.`in` }
             ?: declaredParameters
         val bodyResult = body?.toRequestBodyObject() ?: this.requestBody
-        val responsesResult = this.responses + responses.mapValues { it.value.toResponseObject() }
+        val responsesResult = this.responses + responses.toResponseObjects()
         val mergedTags = (this.tags.orEmpty() + tags).distinct().takeIf { it.isNotEmpty() }
         return copy(parameters = parameters, requestBody = bodyResult, responses = responsesResult, tags = mergedTags)
     }

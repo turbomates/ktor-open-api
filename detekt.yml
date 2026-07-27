@@ -117,7 +117,7 @@ naming:
       - '**/Components.kt'
   ConstructorParameterNaming:
     active: true
-    excludeClassPattern: 'SchemaObject|ParameterObject|SecuritySchemaObject|PathItemObject'
+    excludeClassPattern: 'SchemaObject|ParameterObject|SecuritySchemeObject|PathItemObject'
   ForbiddenClassName:
     active: true
     forbiddenName:
