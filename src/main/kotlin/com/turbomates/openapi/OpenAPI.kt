@@ -3,6 +3,7 @@
 package com.turbomates.openapi
 
 import com.turbomates.openapi.spec.Components
+import com.turbomates.openapi.spec.DiscriminatorObject
 import com.turbomates.openapi.spec.InfoObject
 import com.turbomates.openapi.spec.MediaTypeObject
 import com.turbomates.openapi.spec.OperationObject
@@ -158,9 +159,18 @@ class OpenAPI(var host: String) {
                 // A type known by reflection is described once in `components` and referenced from
                 // everywhere it is used; one made up on the spot has nothing to be keyed by, so it
                 // stays where it is.
-                this.returnType != null -> componentSchemaObject(this.returnType)
+                this.returnType != null ->
+                    componentSchemaObject(this.returnType, this.isNullable) { objectSchemaObject(nullable = false) }
+
                 else -> objectSchemaObject(nullable = this.isNullable)
             }
+
+            is Type.OneOf ->
+                if (this.returnType != null) {
+                    componentSchemaObject(this.returnType, this.isNullable) { oneOfSchemaObject() }
+                } else {
+                    oneOfSchemaObject()
+                }
 
             is Type.Map -> SchemaObject(
                 type = OBJECT_TYPE,
@@ -188,20 +198,41 @@ class OpenAPI(var host: String) {
     }
 
     /**
-     * Registers the schema of this object in `components.schemas` and returns a reference to it.
+     * A schema of one of the [Type.OneOf.options], told apart by the discriminator when there is
+     * one.
+     *
+     * The mapping is written out even though the values are serial names: a generator has no way
+     * of guessing which schema a value stands for, and the names of the components are ours.
+     */
+    private fun Type.OneOf.oneOfSchemaObject(): SchemaObject {
+        val optionSchemas = options.mapValues { it.value.toSchemaObject() }
+        return SchemaObject(
+            oneOf = optionSchemas.values.toList(),
+            discriminator = discriminator?.let { property ->
+                DiscriminatorObject(
+                    property,
+                    optionSchemas.mapNotNull { (value, schema) -> schema.`$ref`?.let { value to it } }.toMap()
+                )
+            }
+        )
+    }
+
+    /**
+     * Registers [schema] in `components.schemas` under the name of [type] and returns a reference
+     * to it.
      *
      * The schema itself is never nullable: it describes the type, while being allowed to be `null`
      * is a property of the place the type is used at, and the same type is used in both ways. The
-     * name is taken before the properties are described, so that a type referring to itself finds
-     * the name of the schema it is part of instead of describing it over again.
+     * name is taken before [schema] is built, so that a type referring to itself finds the name of
+     * the schema it is part of instead of describing it over again.
      */
-    private fun Type.Object.componentSchemaObject(type: KType): SchemaObject {
+    private fun componentSchemaObject(type: KType, nullable: kotlin.Boolean, schema: () -> SchemaObject): SchemaObject {
         val name = componentName(type)
         if (!schemas.containsKey(name)) {
-            schemas[name] = objectSchemaObject(nullable = false)
+            schemas[name] = schema()
             publishComponents()
         }
-        return referenceSchemaObject(name, nullable = isNullable)
+        return referenceSchemaObject(name, nullable)
     }
 
     /**
@@ -372,6 +403,20 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
      * described.
      */
     class Map(val valueType: Type, nullable: kotlin.Boolean) : Type(nullable)
+
+    /**
+     * One of several types, told apart by [discriminator] when there is something to tell them
+     * apart by.
+     *
+     * [options] is keyed by the value the discriminator property carries for each of them — the
+     * serial name of the type, for a `sealed` hierarchy written by `kotlinx.serialization`.
+     */
+    class OneOf(
+        val options: kotlin.collections.Map<kotlin.String, Type>,
+        val discriminator: kotlin.String? = null,
+        val returnType: KType? = null,
+        nullable: kotlin.Boolean
+    ) : Type(nullable)
 
     /** A value nothing is known about — an unresolved type parameter or a star projection. */
     class Any(nullable: kotlin.Boolean = true) : Type(nullable)

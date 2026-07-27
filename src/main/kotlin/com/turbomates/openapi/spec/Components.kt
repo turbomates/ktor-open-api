@@ -30,6 +30,7 @@ data class SchemaObject(
     val type: String? = null,
     val format: String? = null,
     val allOf: List<SchemaObject>? = null,
+    val oneOf: List<SchemaObject>? = null,
     val properties: Map<String, SchemaObject>? = null,
     val required: List<String>? = null,
     val additionalProperties: SchemaObject? = null,
@@ -78,7 +79,7 @@ data class RequestBodyObject(
 )
 
 @Serializable
-data class DiscriminatorObject(val propertyName: String, val mapping: Map<String, String>)
+data class DiscriminatorObject(val propertyName: String, val mapping: Map<String, String>? = null)
 
 @Serializable
 data class MediaTypeObject(

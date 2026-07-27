@@ -13,6 +13,7 @@ import kotlin.reflect.full.createType
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.starProjectedType
 import kotlin.reflect.full.withNullability
 import kotlin.reflect.jvm.javaType
 import kotlin.reflect.jvm.jvmErasure
@@ -231,7 +232,45 @@ class OpenApiKType(private val original: KType) {
             resolved.isEnum() -> resolved.enumType()
             resolved.isPrimitive() -> resolved.primitiveType
             resolved.isValue() -> resolved.valueType()
+            resolved.isSealed() -> resolved.oneOfType(name)
             else -> objectOrReference(name ?: resolved.objectName(), resolved)
+        }
+    }
+
+    /**
+     * A `sealed` type is one of its subclasses, whichever it happens to be.
+     *
+     * It used to be described by its own properties, which a `sealed` class rarely has — a
+     * polymorphic response came out as `{"type":"object","properties":{}}`, saying nothing at all.
+     * Each subclass is described on its own and the whole is `oneOf` them.
+     *
+     * The discriminator is the property `kotlinx.serialization` writes the type into, and the
+     * values are the serial names it writes there. A hierarchy that is not `@Serializable` is
+     * described without one: what tells its subclasses apart is not ours to guess.
+     */
+    private fun KType.oneOfType(name: String?): Type {
+        val subclasses = jvmErasure.sealedSubclasses.takeIf { it.isNotEmpty() }
+            ?: return objectOrReference(name ?: objectName(), this)
+        val key = withNullability(false)
+        if (building.contains(key)) {
+            return Type.Ref(name ?: objectName(), key, nullable = isMarkedNullable)
+        }
+        building.add(key)
+        try {
+            val isSerializable = serialDescriptor() != null
+            val options = subclasses.associate { subclass ->
+                val subtype = subclass.starProjectedType
+                val serialName = subtype.serialDescriptor()?.serialName ?: subclass.qualifiedName.orEmpty()
+                serialName to buildType(subtype)
+            }
+            return Type.OneOf(
+                options,
+                discriminator = CLASS_DISCRIMINATOR.takeIf { isSerializable },
+                returnType = this,
+                nullable = isMarkedNullable
+            )
+        } finally {
+            building.remove(key)
         }
     }
 
@@ -313,6 +352,10 @@ class OpenApiKType(private val original: KType) {
         return isSubtypeOf(typeOf<Collection<*>?>())
     }
 
+    private fun KType.isSealed(): Boolean {
+        return (classifier as? KClass<*>)?.isSealed == true
+    }
+
     /** An array is not a `Collection` in Kotlin, but it is an array in OpenAPI all the same. */
     private fun KType.isArray(): Boolean {
         return jvmErasure.java.isArray
@@ -331,8 +374,10 @@ class OpenApiKType(private val original: KType) {
     }
 
     private companion object {
-        const val MAP_NAME = "map"
         const val JAVA_TIME_PACKAGE = "java.time."
+
+        /** The property `kotlinx.serialization` writes the type of a polymorphic value into. */
+        const val CLASS_DISCRIMINATOR = "type"
 
         /**
          * Types written as a string, and the format they are written in.
