@@ -17,6 +17,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 class RepeatedRegistrationTest {
+    // The same configuration the plugin serializes the document with.
+    private val json = Json { encodeDefaults = false }
+
     @Test
     fun `query parameters are not duplicated`() = testApplication {
         install(OpenAPI)
@@ -81,14 +84,14 @@ class RepeatedRegistrationTest {
             )
         }
 
-        val document = Json { encodeDefaults = false }.encodeToString(api.root)
+        val document = json.encodeToString(api.root)
 
         assertEquals(emptyList(), OpenAPIParser().readContents(document, null, null).messages)
         assertEquals(1, Regex("\"name\":\"page\"").findAll(document).count())
     }
 
     @Serializable
-    data class TestResponse(val done: Boolean)
+    data class TestResponse(val isDone: Boolean)
 
     data class TestPageable(val page: Int, val size: Int)
 

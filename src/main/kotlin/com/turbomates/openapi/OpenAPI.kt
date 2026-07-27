@@ -165,7 +165,7 @@ class OpenAPI(var host: String) {
             .map { name ->
                 ParameterObject(
                     name,
-                    schema = SchemaObject(type = "string", nullable = false),
+                    schema = Type.String(nullable = false).toSchemaObject(),
                     required = true,
                     `in` = INType.PATH.value
                 )

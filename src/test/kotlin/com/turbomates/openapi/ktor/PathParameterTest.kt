@@ -161,7 +161,7 @@ class PathParameterTest {
     }
 
     @Serializable
-    data class TestResponse(val done: Boolean)
+    data class TestResponse(val isDone: Boolean)
 
     @Serializable
     data class TestPathParams(val id: String)

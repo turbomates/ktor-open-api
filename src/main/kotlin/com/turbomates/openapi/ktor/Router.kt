@@ -68,11 +68,11 @@ fun Route.buildFullPath(): String {
 }
 
 private object OpenApiPathFormat : RoutePathFormat {
-    override fun format(component: RoutePathComponent): String {
-        if (component is PathSegmentTailcardRouteSelector && component.name.isNotEmpty()) {
-            return "{${component.name}}"
+    override fun format(selector: RoutePathComponent): String {
+        if (selector is PathSegmentTailcardRouteSelector && selector.name.isNotEmpty()) {
+            return "{${selector.name}}"
         }
-        return OpenApiRoutePathFormat.format(component)
+        return OpenApiRoutePathFormat.format(selector)
     }
 }
 

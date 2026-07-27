@@ -82,7 +82,7 @@ class HttpMethodTest {
     }
 
     @Serializable
-    data class TestResponse(val done: Boolean)
+    data class TestResponse(val isDone: Boolean)
 
     data class TestRequest(val name: String)
 }

@@ -36,10 +36,11 @@ class OpenAPITest {
         }
 
         val response = client.get("/openapi.json")
-        println(client.post("/test") {
-            header("content-type", "application/json")
-            setBody(buildJsonObject { put("body", "test") }.toString())
-        }.bodyAsText()
+        println(
+            client.post("/test") {
+                header("content-type", "application/json")
+                setBody(buildJsonObject { put("body", "test") }.toString())
+            }.bodyAsText()
         )
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
         assertEquals(0, result.messages.count())
