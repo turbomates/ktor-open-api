@@ -2,9 +2,7 @@ package com.turbomates.openapi.ktor
 
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.server.application.install
 import io.ktor.server.routing.route
-import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
 import kotlin.test.Test

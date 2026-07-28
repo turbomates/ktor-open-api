@@ -45,7 +45,9 @@ make detekt-baseline-main  # alias: make dbm
 make detekt-baseline-test  # alias: make dbt
 ```
 
-Note: detekt is configured via `detekt.yml` and uses the detekt-formatting plugin.
+Note: detekt is configured via `detekt.yml` and uses the ktlint wrapper rules
+(`dev.detekt:detekt-rules-ktlint-wrapper`, the `ktlint:` section of the config). detekt 2.x is required —
+1.23.x cannot run on JDK 25.
 
 ### View Available Tasks
 ```bash

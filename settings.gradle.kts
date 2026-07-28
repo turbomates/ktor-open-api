@@ -3,12 +3,12 @@ rootProject.name = "openapi"
 dependencyResolutionManagement {
     versionCatalogs {
         create("deps") {
-            version("ktor", "3.4.3")
-            version("detekt", "1.23.8")
-            version("kotlin", "2.3.0")
-            version("swagger_webjar", "5.30.1")
-            version("kotlin_serialization_json", "1.9.0")
-            version("openapi_validator", "2.1.35")
+            version("ktor", "3.5.1")
+            version("detekt", "2.0.0-alpha.5")
+            version("kotlin", "2.4.10")
+            version("swagger_webjar", "5.32.11")
+            version("kotlin_serialization_json", "1.11.0")
+            version("openapi_validator", "2.1.45")
             version("nexus_staging", "2.0.0")
             library("ktor_webjar", "io.ktor", "ktor-server-webjars").versionRef("ktor")
             library("ktor_locations", "io.ktor", "ktor-server-resources").versionRef("ktor")
@@ -26,8 +26,8 @@ dependencyResolutionManagement {
             library("swagger_webjar", "org.webjars", "swagger-ui").versionRef("swagger_webjar")
             library("openapi_validator", "io.swagger.parser.v3", "swagger-parser").versionRef("openapi_validator")
             plugin("kotlin_serialization", "org.jetbrains.kotlin.plugin.serialization").versionRef("kotlin")
-            plugin("detekt", "io.gitlab.arturbosch.detekt").versionRef("detekt")
-            library("detekt_formatting", "io.gitlab.arturbosch.detekt", "detekt-formatting").versionRef("detekt")
+            plugin("detekt", "dev.detekt").versionRef("detekt")
+            library("detekt_ktlint", "dev.detekt", "detekt-rules-ktlint-wrapper").versionRef("detekt")
             plugin("nexus.release", "io.github.gradle-nexus.publish-plugin").versionRef("nexus_staging")
 
             bundle(
