@@ -13,9 +13,10 @@ import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -36,16 +37,16 @@ class OpenAPITest {
         }
 
         val response = client.get("/openapi.json")
-        println(
-            client.post("/test") {
-                header("content-type", "application/json")
-                setBody(buildJsonObject { put("body", "test") }.toString())
-            }.bodyAsText()
-        )
+        val documented = client.post("/test") {
+            header("content-type", "application/json")
+            setBody(buildJsonObject { put("body", "test") }.toString())
+        }
+        assertEquals(HttpStatusCode.OK, documented.status)
+        assertEquals(TestResponse(HttpStatusCode.OK.value, "test"), Json.decodeFromString(documented.bodyAsText()))
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
         assertEquals(0, result.messages.count())
         assertEquals(HttpStatusCode.OK, response.status)
-        assertContains(response.bodyAsText(), "\"paths\":{\"/test\"")
+        assertNotNull(result.openAPI.paths["/test"]!!.post)
     }
 
     @Serializable
@@ -66,7 +67,7 @@ class OpenAPITest {
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
         assertEquals(0, result.messages.count())
         assertEquals(HttpStatusCode.OK, response.status)
-        assertContains(response.bodyAsText(), "\"paths\":{\"/test\"")
+        assertNotNull(result.openAPI.paths["/test"]!!.post)
     }
 
     @Test
@@ -81,7 +82,9 @@ class OpenAPITest {
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
         assertEquals(0, result.messages.count())
         assertEquals(HttpStatusCode.OK, response.status)
-        assertContains(response.bodyAsText(), "{\"name\":\"body\",\"in\":\"query\"")
+        val parameter = result.openAPI.paths["/test"]!!.get.parameters.single()
+        assertEquals("body", parameter.name)
+        assertEquals("query", parameter.`in`)
     }
 
     private data class TestPrimitiveRequest(val body: Double)

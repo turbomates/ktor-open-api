@@ -193,7 +193,11 @@ style:
     forbiddenImports: []
   ForbiddenMethodCall:
     active: true
-    methods: []
+    # Debug output left in the sources: a test says what it means with an assertion, and the library
+    # itself has nothing to print.
+    methods:
+      - 'kotlin.io.print'
+      - 'kotlin.io.println'
   ForbiddenVoid:
     active: true
   MagicNumber:
