@@ -26,12 +26,12 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(deps.ktor.test)
     testImplementation(deps.openapi.validator)
-    detektPlugins(deps.detekt.formatting)
+    detektPlugins(deps.detekt.ktlint)
 }
 
-// Ensure Kotlin uses JDK 21 toolchain
+// Ensure Kotlin uses JDK 25 toolchain
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 tasks.test {
@@ -39,7 +39,7 @@ tasks.test {
 }
 tasks.withType<KotlinCompile> {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
     }
 }
 detekt {
@@ -55,13 +55,13 @@ tasks.named("check").configure {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
     withJavadocJar()
     withSourcesJar()
-    // Ensure all Java-related tasks (including tests) use JDK 21
+    // Ensure all Java-related tasks (including tests) use JDK 25
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
@@ -70,7 +70,7 @@ val javaToolchains = project.extensions.getByType(org.gradle.jvm.toolchain.JavaT
 tasks.withType<Test>().configureEach {
     javaLauncher.set(
         javaToolchains.launcherFor {
-            languageVersion.set(JavaLanguageVersion.of(21))
+            languageVersion.set(JavaLanguageVersion.of(25))
         }
     )
 }

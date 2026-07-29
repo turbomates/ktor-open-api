@@ -4,9 +4,7 @@ import com.turbomates.openapi.OpenAPI as SwaggerOpenAPI
 import com.turbomates.openapi.openApiKType
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.server.application.install
 import io.ktor.server.routing.route
-import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
 import kotlin.reflect.typeOf
