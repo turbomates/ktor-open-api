@@ -247,10 +247,10 @@ internal class OperationFactory(private val schemas: SchemaRegistry) {
 
     private fun ResponseHeader.toHeaderObject(): HeaderObject {
         return HeaderObject(
+            schema = schemas.schemaObject(type),
             description = description,
             required = true.takeIf { required },
-            deprecated = true.takeIf { deprecated },
-            schema = schemas.schemaObject(type)
+            deprecated = true.takeIf { deprecated }
         )
     }
 

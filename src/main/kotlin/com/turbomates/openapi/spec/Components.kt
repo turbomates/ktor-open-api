@@ -94,10 +94,13 @@ data class MediaTypeObject(
  * A header carried by a response, an encoding or a component.
  *
  * A header is described exactly like a parameter, save for `name` and `in`: it is named by the key
- * it is listed under, and its location is the one the map it belongs to implies.
+ * it is listed under, and its location is the one the map it belongs to implies. [schema] is
+ * required for the same reason a parameter's is — a header describes a value, and OpenAPI has
+ * nowhere else here to say what that value looks like.
  */
 @Serializable
 data class HeaderObject(
+    val schema: SchemaObject,
     val description: String? = null,
     val required: Boolean? = null,
     val deprecated: Boolean? = null,
@@ -105,7 +108,6 @@ data class HeaderObject(
     val style: String? = null,
     val explode: Boolean? = null,
     val allowReserved: Boolean? = null,
-    val schema: SchemaObject? = null,
     @Contextual val example: Any? = null,
     val examples: Map<String, ExampleObject>? = null
 )

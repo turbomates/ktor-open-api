@@ -6,6 +6,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -104,6 +105,36 @@ class ResponseHeaderTest {
         // than a second one.
         assertEquals(setOf("x-request-id"), headers.keys)
         assertEquals("The id this call was traced by", headers.getValue("x-request-id").description)
+    }
+
+    @Test
+    fun `a header is matched by a name folded the same way everywhere`() {
+        // `I` lowercases to a dotless `ı` in Turkish, which would leave `X-Request-Id` and
+        // `x-request-id` as two different headers for anyone running with that locale. The names
+        // are folded by the invariant locale, so the document comes out the same wherever it is
+        // built.
+        val locale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr"))
+            testApplication {
+                install(OpenAPI) {
+                    globalResponseHeaders { header("X-Request-Id", Type.String(), "Request correlation id") }
+                }
+                routing {
+                    get<TestResponse>("/users", {
+                        responseHeaders { header("x-request-id", Type.String(), "The id this call was traced by") }
+                    }) { TestResponse(true) }
+                }
+
+                val parsed = document(client.get("/openapi.json").bodyAsText())
+                val headers = parsed.openAPI.paths.getValue("/users").get.responses.getValue("200").headers
+
+                assertEquals(emptyList(), parsed.messages)
+                assertEquals(setOf("x-request-id"), headers.keys)
+            }
+        } finally {
+            Locale.setDefault(locale)
+        }
     }
 
     @Test
