@@ -7,6 +7,9 @@ import com.turbomates.openapi.MediaType
 import com.turbomates.openapi.OperationDescription
 import com.turbomates.openapi.Parameter
 import com.turbomates.openapi.ResponseDescription
+import com.turbomates.openapi.ResponseHeader
+import com.turbomates.openapi.ResponseHeadersBuilder
+import com.turbomates.openapi.TypeResolvers
 import com.turbomates.openapi.openApiKType
 import com.turbomates.openapi.securityRequirement
 import com.turbomates.openapi.spec.ExternalDocumentationObject
@@ -47,6 +50,7 @@ class OperationBuilder {
     private val parameters: MutableList<ParameterDescription> = mutableListOf()
     private val responses: MutableMap<String, ResponseTypeDescription> = mutableMapOf()
     private val security: MutableList<SecurityRequirement> = mutableListOf()
+    private val responseHeaders: MutableList<ResponseHeadersBuilder.() -> Unit> = mutableListOf()
     private var externalDocs: ExternalDocumentationObject? = null
     private var consumes: List<String> = listOf(MediaType.JSON)
     private var produces: List<String> = listOf(MediaType.JSON)
@@ -105,6 +109,21 @@ class OperationBuilder {
     }
 
     /**
+     * Describes the response of [status] together with the headers it carries.
+     *
+     * ```
+     * response(HttpStatusCode.Created, "the order") { header("Location", Type.String()) }
+     * ```
+     */
+    fun response(status: HttpStatusCode, description: String? = null, headers: ResponseHeadersBuilder.() -> Unit) {
+        response(status.value, description, headers)
+    }
+
+    fun response(status: Int, description: String? = null, headers: ResponseHeadersBuilder.() -> Unit) {
+        describeResponse(status.toString(), description, null, headers)
+    }
+
+    /**
      * Describes the response of [status], which carries a [T] rather than what the route returns.
      *
      * This is how one operation answers with several bodies — `200` with the resource and `404`
@@ -118,6 +137,22 @@ class OperationBuilder {
         describeResponse(status.toString(), description, typeOf<T>())
     }
 
+    inline fun <reified T : Any> responseOf(
+        status: HttpStatusCode,
+        description: String? = null,
+        noinline headers: ResponseHeadersBuilder.() -> Unit
+    ) {
+        responseOf<T>(status.value, description, headers)
+    }
+
+    inline fun <reified T : Any> responseOf(
+        status: Int,
+        description: String? = null,
+        noinline headers: ResponseHeadersBuilder.() -> Unit
+    ) {
+        describeResponse(status.toString(), description, typeOf<T>(), headers)
+    }
+
     /** Describes every status code not documented on its own. */
     fun default(description: String? = null) {
         describeResponse(OperationDescription.DEFAULT_RESPONSE, description, null)
@@ -127,10 +162,34 @@ class OperationBuilder {
         describeResponse(OperationDescription.DEFAULT_RESPONSE, description, typeOf<T>())
     }
 
+    /**
+     * Headers every response of this operation carries, on top of the ones the document states
+     * globally.
+     *
+     * ```
+     * responseHeaders { header("X-Request-Id", Type.String(), "Request correlation id") }
+     * ```
+     *
+     * A header named here replaces the global one of the same name, and a header named on a single
+     * response replaces this one in turn.
+     */
+    fun responseHeaders(block: ResponseHeadersBuilder.() -> Unit) {
+        responseHeaders.add(block)
+    }
+
     @PublishedApi
-    internal fun describeResponse(code: String, description: String?, type: KType?) {
+    internal fun describeResponse(
+        code: String,
+        description: String?,
+        type: KType?,
+        headers: (ResponseHeadersBuilder.() -> Unit)? = null
+    ) {
         val known = responses[code]
-        responses[code] = ResponseTypeDescription(description ?: known?.description, type ?: known?.type)
+        responses[code] = ResponseTypeDescription(
+            description ?: known?.description,
+            type ?: known?.type,
+            known?.headers.orEmpty() + listOfNotNull(headers)
+        )
     }
 
     /**
@@ -149,7 +208,14 @@ class OperationBuilder {
         security.add(emptyMap())
     }
 
-    internal fun build(): OperationDescription {
+    /**
+     * The description this block adds up to, with every type in it read through [resolvers].
+     *
+     * The types are described here rather than where they were named, so that a header or a
+     * response body of a route is described the way the document describes that type everywhere
+     * else — see `OpenAPI.typeResolver`.
+     */
+    internal fun build(resolvers: TypeResolvers): OperationDescription {
         return OperationDescription(
             tags = tags.distinct(),
             summary = summary,
@@ -161,7 +227,7 @@ class OperationBuilder {
             parameters = parameters.map {
                 Parameter(
                     it.name,
-                    it.type.openApiKType.type(),
+                    it.type.openApiKType(resolvers).type(),
                     it.location,
                     it.required,
                     it.description
@@ -170,9 +236,20 @@ class OperationBuilder {
             consumes = consumes,
             produces = produces,
             responses = responses.mapValues { (_, response) ->
-                ResponseDescription(response.description, response.type?.openApiKType?.type())
-            }
+                ResponseDescription(
+                    response.description,
+                    response.type?.openApiKType(resolvers)?.type(),
+                    response.headers.buildResponseHeaders(resolvers)
+                )
+            },
+            responseHeaders = responseHeaders.buildResponseHeaders(resolvers)
         )
+    }
+
+    private fun List<ResponseHeadersBuilder.() -> Unit>.buildResponseHeaders(
+        resolvers: TypeResolvers
+    ): List<ResponseHeader> {
+        return flatMap { ResponseHeadersBuilder(resolvers).apply(it).build() }
     }
 
     private data class ParameterDescription(
@@ -183,5 +260,9 @@ class OperationBuilder {
         val description: String?
     )
 
-    private data class ResponseTypeDescription(val description: String?, val type: KType?)
+    private data class ResponseTypeDescription(
+        val description: String?,
+        val type: KType?,
+        val headers: List<ResponseHeadersBuilder.() -> Unit> = emptyList()
+    )
 }

@@ -3,12 +3,14 @@
 package com.turbomates.openapi
 
 import com.turbomates.openapi.spec.ExternalDocumentationObject
+import com.turbomates.openapi.spec.HeaderObject
 import com.turbomates.openapi.spec.MediaTypeObject
 import com.turbomates.openapi.spec.OperationObject
 import com.turbomates.openapi.spec.ParameterObject
 import com.turbomates.openapi.spec.RequestBodyObject
 import com.turbomates.openapi.spec.ResponseObject
 import com.turbomates.openapi.spec.SecurityRequirement
+import kotlin.reflect.typeOf
 
 /** Media types this library names by itself. Any other may be given as a string. */
 object MediaType {
@@ -40,7 +42,9 @@ data class OperationDescription(
     val consumes: List<String> = listOf(MediaType.JSON),
     val produces: List<String> = listOf(MediaType.JSON),
     /** Responses by status code, or by [DEFAULT_RESPONSE] for the one covering the rest. */
-    val responses: Map<String, ResponseDescription> = emptyMap()
+    val responses: Map<String, ResponseDescription> = emptyMap(),
+    /** Headers every response of this operation carries, on top of the ones the document states. */
+    val responseHeaders: List<ResponseHeader> = emptyList()
 ) {
     companion object {
         /** The response key OpenAPI reserves for every code not listed on its own. */
@@ -54,7 +58,78 @@ data class OperationDescription(
  * [type] is the body it carries, or `null` for a response with no body at all — a `204`, or a code
  * whose shape is described elsewhere.
  */
-data class ResponseDescription(val description: String? = null, val type: Type? = null)
+data class ResponseDescription(
+    val description: String? = null,
+    val type: Type? = null,
+    /** Headers this response carries beyond the ones the operation and the document state. */
+    val headers: List<ResponseHeader> = emptyList()
+)
+
+/**
+ * A header a response carries.
+ *
+ * OpenAPI names a response header by the key it is listed under, so [name] is what identifies it —
+ * a header stated closer to the response replaces the one of the same name stated further away,
+ * whatever the case it is written in.
+ */
+data class ResponseHeader(
+    val name: String,
+    val type: Type,
+    val description: String? = null,
+    val required: Boolean = false,
+    val deprecated: Boolean = false
+)
+
+/**
+ * Collects response headers, for the document as a whole or for one operation.
+ *
+ * ```
+ * globalResponseHeaders {
+ *     header("X-Request-Id", Type.String(), "Request correlation id")
+ *     header<Int>("X-Rate-Limit-Remaining", "Calls left in the current window")
+ * }
+ * ```
+ */
+class ResponseHeadersBuilder(
+    @PublishedApi internal val resolvers: TypeResolvers = TypeResolvers()
+) {
+    @PublishedApi
+    internal val headers: MutableList<ResponseHeader> = mutableListOf()
+
+    /** A header described by an OpenAPI type — `Type.String()`, `Type.Number()` and the rest. */
+    fun header(
+        name: String,
+        type: Type,
+        description: String? = null,
+        required: Boolean = false,
+        deprecated: Boolean = false
+    ) {
+        headers.add(ResponseHeader(name, type, description, required, deprecated))
+    }
+
+    /** A header described by the Kotlin type its value has. */
+    inline fun <reified T : Any> header(
+        name: String,
+        description: String? = null,
+        required: Boolean = false,
+        deprecated: Boolean = false
+    ) {
+        header(name, typeOf<T>().openApiKType(resolvers).type(), description, required, deprecated)
+    }
+
+    internal fun build(): List<ResponseHeader> = headers.toList()
+}
+
+/**
+ * The headers of a response, the ones stated closer to it winning.
+ *
+ * A header is identified by its name, and HTTP header names are case-insensitive, so an operation
+ * that describes `x-request-id` overrides the `X-Request-Id` of the document rather than adding a
+ * second header beside it. The name of the header that wins is the one the document shows.
+ */
+internal fun mergeResponseHeaders(vararg levels: List<ResponseHeader>): List<ResponseHeader> {
+    return levels.asSequence().flatten().associateBy { it.name.lowercase() }.values.toList()
+}
 
 /** A parameter of an operation given by hand rather than read off the route signature. */
 data class Parameter(
@@ -68,6 +143,14 @@ data class Parameter(
 
 /** Builds the operation of a path item, and merges it with the one already described there. */
 internal class OperationFactory(private val schemas: SchemaRegistry) {
+    /**
+     * Headers every response of the document carries.
+     *
+     * They are written into the operations built from here on, so a document states them before it
+     * describes the routes that are to carry them.
+     */
+    var globalResponseHeaders: List<ResponseHeader> = emptyList()
+
     fun operation(
         existing: OperationObject?,
         responses: Map<Int, Type>,
@@ -142,20 +225,32 @@ internal class OperationFactory(private val schemas: SchemaRegistry) {
             val known = described[code]
             described[code] = ResponseDescription(
                 response.description ?: known?.description,
-                response.type ?: known?.type
+                response.type ?: known?.type,
+                mergeResponseHeaders(known?.headers.orEmpty(), response.headers)
             )
         }
-        return described.mapValues { (code, response) -> response.toResponseObject(code, description.produces) }
+        return described.mapValues { (code, response) -> response.toResponseObject(code, description) }
     }
 
-    private fun ResponseDescription.toResponseObject(code: String, produces: List<String>): ResponseObject {
+    private fun ResponseDescription.toResponseObject(code: String, operation: OperationDescription): ResponseObject {
+        val merged = mergeResponseHeaders(globalResponseHeaders, operation.responseHeaders, headers)
         return ResponseObject(
             // `description` is required of every response, and an empty one documents nothing, so
             // the meaning of the status code is used until something better is said.
             description = description ?: defaultDescription(code),
+            headers = merged.associate { it.name to it.toHeaderObject() }.takeIf { it.isNotEmpty() },
             content = type?.let { body ->
-                produces.associateWith { MediaTypeObject(schema = schemas.schemaObject(body)) }
+                operation.produces.associateWith { MediaTypeObject(schema = schemas.schemaObject(body)) }
             }
+        )
+    }
+
+    private fun ResponseHeader.toHeaderObject(): HeaderObject {
+        return HeaderObject(
+            description = description,
+            required = true.takeIf { required },
+            deprecated = true.takeIf { deprecated },
+            schema = schemas.schemaObject(type)
         )
     }
 

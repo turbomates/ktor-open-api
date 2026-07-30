@@ -28,7 +28,7 @@ inline fun <reified TResponse : Any> Route.delete(
         route.buildFullPath(),
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -47,7 +47,7 @@ inline fun <reified TResponse : Any> Route.delete(
         route.buildFullPath(),
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -74,7 +74,7 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.delete(
         response = typeOf<TResponse>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
         queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -94,7 +94,7 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.deleteWithBody(
         HttpMethod.Delete,
         response = typeOf<TResponse>(),
         body = typeOf<TBody>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -125,7 +125,7 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> 
         response = typeOf<TResponse>(),
         queryParams = typeOf<TQuery>(),
         pathParams = typeOf<TPath>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -164,7 +164,7 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any, 
         body = typeOf<TBody>(),
         pathParams = typeOf<TPath>(),
         queryParams = typeOf<TQuery>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
