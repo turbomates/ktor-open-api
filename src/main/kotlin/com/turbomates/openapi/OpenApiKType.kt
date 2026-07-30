@@ -26,7 +26,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.serializerOrNull
 
-class OpenApiKType(private val original: KType) {
+class OpenApiKType(private val original: KType, private val resolvers: TypeResolvers = TypeResolvers()) {
     private val projectionTypes: Map<String, KType> = buildGenericTypes(original)
 
     /**
@@ -133,9 +133,9 @@ class OpenApiKType(private val original: KType) {
 
     fun getArgumentProjectionType(type: KType): OpenApiKType {
         if (projectionTypes.containsKey(type.toString())) {
-            return OpenApiKType(projectionTypes.getValue(type.toString()))
+            return OpenApiKType(projectionTypes.getValue(type.toString()), resolvers)
         }
-        return OpenApiKType(type)
+        return OpenApiKType(type, resolvers)
     }
 
     override fun equals(other: Any?): Boolean {
@@ -236,6 +236,9 @@ class OpenApiKType(private val original: KType) {
         if (resolved.classifier is KTypeParameter) {
             return Type.Any(resolved.isMarkedNullable)
         }
+        // What the API says about a type comes before what reflection can read off it, wherever the
+        // type turns up — as a body, as a response, as a property of either.
+        resolvers.resolve(resolved)?.let { return it }
         val builtIn = resolved.builtInType()
         return when {
             builtIn != null -> builtIn
@@ -424,6 +427,9 @@ class OpenApiKType(private val original: KType) {
 
 val KType.openApiKType: OpenApiKType
     get() = OpenApiKType(this)
+
+/** The type as described with [resolvers] — what `OpenAPI.describe` reads a type through. */
+fun KType.openApiKType(resolvers: TypeResolvers): OpenApiKType = OpenApiKType(this, resolvers)
 
 inline fun <reified T : Any> KClass<T>.openApiKType(): OpenApiKType {
     return typeOf<T>().openApiKType

@@ -14,8 +14,6 @@ import kotlin.reflect.jvm.jvmErasure
  * time and a type that refers to itself can be described at all.
  */
 internal class SchemaRegistry {
-    private val customTypes: MutableMap<KType, Type> = mutableMapOf()
-
     /** Component name every described type is registered under, keyed by the type itself. */
     private val componentNames: MutableMap<KType, String> = mutableMapOf()
     private val components: MutableMap<String, SchemaObject> = mutableMapOf()
@@ -23,10 +21,6 @@ internal class SchemaRegistry {
     /** The schemas built so far, ready to be published as `components.schemas`. */
     val schemas: Map<String, SchemaObject>
         get() = components.toMap()
-
-    fun setCustomClassType(kType: KType, type: Type) {
-        customTypes[kType] = type
-    }
 
     /**
      * Describes [model] in `components.schemas` under [name].
@@ -56,17 +50,15 @@ internal class SchemaRegistry {
                 enum = this.values,
                 nullable = this.isNullable
             )
-            is Type.Object -> when {
-                this.returnType != null && customTypes.containsKey(this.returnType) ->
-                    customTypes.getValue(this.returnType).toSchemaObject()
-                // A type known by reflection is described once in `components` and referenced from
-                // everywhere it is used; one made up on the spot has nothing to be keyed by, so it
-                // stays where it is.
-                this.returnType != null ->
+            // A type known by reflection is described once in `components` and referenced from
+            // everywhere it is used; one made up on the spot — by a resolver, or by hand — has
+            // nothing to be keyed by, so it stays where it is.
+            is Type.Object ->
+                if (this.returnType != null) {
                     componentSchemaObject(this.returnType, this.isNullable) { objectSchemaObject(nullable = false) }
-
-                else -> objectSchemaObject(nullable = this.isNullable)
-            }
+                } else {
+                    objectSchemaObject(nullable = this.isNullable)
+                }
 
             is Type.OneOf ->
                 if (this.returnType != null) {

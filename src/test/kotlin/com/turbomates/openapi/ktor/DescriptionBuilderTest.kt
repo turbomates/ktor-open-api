@@ -1,5 +1,7 @@
 package com.turbomates.openapi.ktor
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.turbomates.openapi.MediaType
 import com.turbomates.openapi.Property
 import com.turbomates.openapi.Type
 import io.ktor.client.request.get
@@ -10,7 +12,6 @@ import io.swagger.parser.OpenAPIParser
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.typeOf
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -44,11 +45,16 @@ class DescriptionBuilderTest {
         }
         val response = client.get("/openapi.json")
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
+        val schema = result.openAPI.paths.getValue("/test").post
+            .responses.getValue("400")
+            .content.getValue(MediaType.JSON).schema
+
         assertEquals(0, result.messages.count())
         assertEquals(HttpStatusCode.OK, response.status)
-        assertContains(response.bodyAsText(), "\"responses\":{\"400\"")
-        assertContains(response.bodyAsText(), "\"example\":{\"error\":\"Wrong response\"}")
-
+        // The type is described the way it was named rather than the way reflection reads it, so
+        // the response carries the `error` of the description and not the properties of the class.
+        assertEquals(setOf("error"), schema.properties.keys)
+        assertEquals("Wrong response", (schema.example as JsonNode).get("error").asText())
     }
 
     @Test
@@ -69,9 +75,10 @@ class DescriptionBuilderTest {
         }
         val response = client.get("/openapi.json")
         val result = OpenAPIParser().readContents(response.bodyAsText(), null, null)
+
         assertEquals(0, result.messages.count())
         assertEquals(HttpStatusCode.OK, response.status)
-        assertContains(response.bodyAsText(), "\"responses\":{\"400\"")
+        assertEquals(setOf("400"), result.openAPI.paths.getValue("/test").post.responses.keys)
     }
 
     private data class TestTemplateClass<T : Any>(val value: T)
