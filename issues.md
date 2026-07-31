@@ -8,110 +8,74 @@ This document outlines missing features and improvements for the Ktor OpenAPI li
 - **P2**: Medium - Nice-to-have improvements
 - **P3**: Low - Advanced features
 
+## Status (as of 2026-07-30)
+
+**Done** — schema registry with `$ref`/components (recursion included), polymorphism (`oneOf` +
+discriminator for sealed hierarchies), formats and `integer`/`number` split, maps as
+`additionalProperties`, the whole operation DSL (metadata, tags, per-status responses, media
+types, header/cookie parameters), security schemes and requirements, servers/info/tags/external
+docs on the document, serializer-driven schemas (`@SerialName`, required/optional), path template
+parameters, HEAD/OPTIONS/TRACE, 91 tests.
+
+**Still open** — examples DSL, validation constraints, readOnly/writeOnly, field-level
+deprecation, default values in schemas, custom type resolvers and schema hooks, vendor
+extensions (`x-*`), global response headers, callbacks/links/webhooks, per-part `multipart`
+encoding, caching of the serialized document, richer error messages.
+
 ---
 
 ## 1. Core OpenAPI 3.0 Features
 
-### P1: Security Schemes Integration
-**Current State**: Security classes exist (`SecuritySchemeObject`, `OAuthFlowsObject`) but not integrated
-**Missing**:
-- No way to define security schemes (OAuth2, Bearer, API Key)
-- No security requirements on operations
-- No global security configuration
-
-**Expected API**:
+### P1: Security Schemes Integration — **done**
+**Delivered**: `SecurityScheme` builds a scheme of any kind — `http`, `bearer`, `basic`,
+`apiKey` (header/query/cookie), `oauth2` with all four flows, `openIdConnect`. The document
+offers schemes with `securityScheme(name, scheme)` and requires them globally with
+`security(...)`; an operation states its own with `security("BearerAuth", "scope")` or opts out
+with `noSecurity()`.
 ```kotlin
-install(OpenAPI) {
-    security {
-        bearerAuth("BearerAuth")
-        apiKey("ApiKeyAuth", ApiKeyLocation.HEADER, "X-API-Key")
-        oauth2("OAuth2") {
-            authorizationCode(
-                authorizationUrl = "https://example.com/oauth/authorize",
-                tokenUrl = "https://example.com/oauth/token",
-                scopes = mapOf("read" to "Read access", "write" to "Write access")
-            )
-        }
-    }
+configure = { api ->
+    api.securityScheme("BearerAuth", SecurityScheme.bearer("JWT"))
+    api.security(securityRequirement("BearerAuth"))
 }
-
-route.get<User>("/users/{id}") {
-    security("BearerAuth")
-    // ...
-}
+route.get<User>("/users/{id}", { security("BearerAuth") }) { ... }
 ```
+- `Security.kt` (`SecurityScheme`, `OAuthFlowsBuilder`, `securityRequirement`), `OpenAPI.kt`
+  (`securityScheme`, `security`), `OperationBuilder.kt` (`security`, `noSecurity`)
+- `DocumentMetadataTest` — bearer / api key / oauth2 schemes; `OperationMetadataTest` —
+  `an operation requires the scheme it names`
 
-### P1: Tags and Categorization
-**Current State**: `TagObject` class exists but no integration
-**Missing**:
-- No way to tag operations
-- No operation grouping/categorization
-- Tags not rendered in Swagger UI
+### P1: Tags and Categorization — **done**
+**Delivered**: `tags("Users", "Public API")` on the operation DSL groups the operation; the
+document describes tags with `tag(name, description, externalDocs)`.
+- `OperationBuilder.kt` (`tags`), `OpenAPI.kt` (`tag`)
+- `OperationMetadataTest` — `an operation is described by what its types cannot say`
 
-**Expected API**:
+### P1: Operation Metadata (operationId, summary, description) — **done**
+**Delivered**: `summary`, `description`, `operationId` and `deprecated` are properties of the
+operation DSL; `externalDocs(url, description)` sits next to them. A repeated registration keeps
+what the operation already says instead of overwriting it.
 ```kotlin
-route.get<User>("/users") {
-    tags("Users", "Public API")
-    // ...
-}
-
-// or via configuration
-install(OpenAPI) {
-    tags {
-        tag("Users", "User management operations")
-        tag("Public API", "Publicly accessible endpoints")
-    }
-}
-```
-
-### P1: Operation Metadata (operationId, summary, description)
-**Current State**: Operations have no metadata
-**Missing**:
-- No `operationId` (used by code generators and tooling)
-- No `summary` (short description shown in collapsed state)
-- No `description` (detailed documentation with Markdown support)
-- No `deprecated` flag
-
-**Best Practice**: operationId should be unique and follow naming conventions (e.g., "getUserById", "createUser")
-
-**Expected API**:
-```kotlin
-route.get<User>("/users/{id}") {
+route.get<User, UserPath>("/users/{id}", {
     operationId = "getUserById"
     summary = "Get a user by ID"
-    description = """
-        Retrieves a single user by their unique identifier.
-
-        ## Authorization
-        Requires Bearer token with `users:read` scope.
-    """.trimIndent()
-    deprecated = false
-    // ...
-}
+    description = "Retrieves a single user by their unique identifier."
+}) { path -> service.find(path.id) }
 ```
+- `OperationBuilder.kt`, `Operation.kt` (`OperationDescription`, `OperationFactory.merge`)
+- `OperationMetadataTest`; `OperationMetadataTest` — `a route registered again keeps what it
+  already describes`
 
-### P2: Response Descriptions
-**Current State**: Responses have empty descriptions
-**Location**: `OpenAPI.kt:142` - `description = ""`
-**Impact**: Generated specs have no response documentation
-**Solution**:
-- Allow custom response descriptions
-- Support multiple response codes with different descriptions
-- Add default descriptions for common status codes
-
-**Expected API**:
-```kotlin
-route.post<User, CreateUserRequest>("/users") {
-    responses {
-        response(201, "User created successfully")
-        response(400, "Invalid request body")
-        response(409, "User already exists")
-    }
-}
-```
+### P2: Response Descriptions — **done**
+**Delivered**: `response(status, description)` describes a code by hand, and a response without a
+description falls back on the meaning of its status code (`200` → "OK", `404` → "Not Found", …)
+instead of an empty string.
+- `OperationBuilder.kt` (`response`), `Operation.kt` (`REASON_PHRASES`, `defaultDescription`)
+- `OperationMetadataTest` — `a response says what the status code means`,
+  `a described response keeps its description and its body`
 
 ### P2: Examples Support
-**Current State**: Limited example integration
+**Current State**: An example can only be smuggled in through `customTypeDescription`
+(`Type.String` / `Type.Object` carry an `example`). Nothing on the operation DSL.
 **Missing**:
 - No request body examples
 - No response examples
@@ -119,173 +83,165 @@ route.post<User, CreateUserRequest>("/users") {
 
 **Expected API**:
 ```kotlin
-route.post<User, CreateUserRequest>("/users") {
-    requestExample = CreateUserRequest(
-        email = "user@example.com",
-        name = "John Doe"
-    )
+route.post<User, CreateUserRequest>("/users", {
+    requestExample = CreateUserRequest(email = "user@example.com", name = "John Doe")
     responseExamples {
         example(201, "Created", User(id = "123", email = "user@example.com"))
         example(400, "Invalid Email", ErrorResponse(message = "Invalid email format"))
     }
-}
+}) { ... }
 ```
 
 ---
 
 ## 2. Type System Enhancements
 
+### P0: Schema Registry with $ref/components — **done**
+**Delivered**: every type described by reflection is written to `components.schemas` once and
+referenced with `$ref` from everywhere it is used. The name is taken before the schema is built,
+so a type referring to itself — directly, through a collection or through another type — resolves
+to a reference instead of recursing forever. Names are derived from the class and its type
+arguments (`PageUserResponse`), with a counter when two types collide; a model added by hand with
+`addModel` keeps its name. A nullable use wraps the reference in `allOf`, since a `$ref` ignores
+its siblings in OpenAPI 3.0.
+- `SchemaRegistry.kt`; `Type.Ref`, `OpenApiKType.building` for cycle detection
+- `SchemaComponentTest` — recursion (self, mutual), reuse across operations, name collisions,
+  hand-added models, nullable references
+
 ### P1: Validation Constraints Support
-**Current State**: No validation metadata captured
+**Current State**: No validation metadata captured; `SchemaObject` has no
+`minLength`/`maximum`/`pattern`/… fields yet.
 **Missing**:
-- String constraints (minLength, maxLength, pattern, format)
+- String constraints (minLength, maxLength, pattern)
 - Number constraints (minimum, maximum, multipleOf)
 - Array constraints (minItems, maxItems, uniqueItems)
-- Required/optional field documentation
 
 **Expected**: Integration with Kotlin validation libraries or custom annotations
 ```kotlin
 data class CreateUserRequest(
     @StringLength(min = 3, max = 50)
     val name: String,
-
     @Email
     val email: String,
-
     @Range(min = 18, max = 120)
     val age: Int
 )
 ```
 
-### P1: Polymorphism and Discriminators
-**Current State**: `DiscriminatorObject` exists but not integrated
-**Missing**:
-- No support for sealed classes
-- No discriminator mapping
-- No oneOf/anyOf/allOf schemas
+### P1: Polymorphism and Discriminators — **done**
+**Delivered**: a `sealed` type is described as `oneOf` its leaf subclasses, keyed by the serial
+names `kotlinx.serialization` writes, with a `discriminator` and its `mapping` when the hierarchy
+is `@Serializable`. `@JsonClassDiscriminator` is honoured; hierarchies deeper than one level list
+only their leaves; sealed interfaces reached twice stay one option. Each subclass schema carries
+the discriminator property itself — a required enum of the single value that subclass is written
+under — so a body generated from the document holds the key `kotlinx` refuses to decode without.
+- `OpenApiKType.kt` (`oneOfType`, `sealedLeaves`, `classDiscriminator`, `serialName`,
+  `discriminatorProperty`), `Type.OneOf`, `SchemaRegistry.oneOfSchemaObject`
+- `SealedTypeTest` — 10 cases: `oneOf` and mapping, the discriminator value per subclass,
+  `@JsonClassDiscriminator`, deep hierarchies, generic hierarchies, sealed interfaces, a
+  hierarchy with no serializer, and one that refers to itself
 
-**Expected**: Automatic discriminator detection for sealed classes
-```kotlin
-@Serializable
-sealed class Animal {
-    abstract val type: String
+### P2: Format Specifiers — **done**
+**Delivered**: `format` on strings and numbers throughout. Whole numbers are `integer`
+(`int32`/`int64`), floating point stays `number` (`float`/`double`). `UUID` → `uuid`,
+`Duration` → `duration`, `ByteArray` → `binary`, `URI`/`URL` → `uri`; `java.time`,
+`kotlinx.datetime` and `kotlin.uuid` types are matched by name — no extra dependency — and
+described as `date` / `date-time` / `time` strings instead of being taken apart into their
+fields.
+- `Format`, `OpenApiKType.kt` (`numberType`, `builtInType`, `BUILT_IN_FORMATS`)
+- `TypeFormatTest` — integers and widths, values described by format, arrays, maps
 
-    @Serializable
-    data class Dog(override val type: String = "dog", val breed: String) : Animal()
-
-    @Serializable
-    data class Cat(override val type: String = "cat", val indoor: Boolean) : Animal()
-}
-
-// Should generate discriminator with propertyName = "type"
-```
-
-### P2: Format Specifiers
-**Current State**: Basic type mapping exists
-**Missing**:
-- No format field for strings (date, date-time, email, uuid, uri, password, etc.)
-- UUID is mapped as String without format="uuid"
-- Duration/Locale have no standard format
-
-**Expected**: Add format field to Type.String
-```kotlin
-sealed class Type {
-    data class String(
-        val isNullable: Boolean = true,
-        val enum: List<kotlin.String>? = null,
-        val format: StringFormat? = null  // NEW
-    ) : Type(isNullable)
-}
-
-enum class StringFormat {
-    DATE, DATE_TIME, PASSWORD, BYTE, BINARY, EMAIL, UUID, URI, HOSTNAME, IPV4, IPV6
-}
-```
-
-### P2: Additional Property Support
-**Current State**: Objects don't support additionalProperties
-**Missing**:
-- Map types with value schemas
-- Free-form objects
-- Pattern properties
-
-**Expected**: Better Map type handling with schema for values
+### P2: Additional Property Support — **done** (pattern properties aside)
+**Delivered**: a `Map<K, V>` is `type: object` with `additionalProperties` holding the schema of
+`V` — not a property named after the key class. A value nothing is known about (`Any`, a star
+projection, an unresolved type parameter) is an empty schema, which is OpenAPI for "anything".
+- `Type.Map`, `Type.Any`, `OpenApiKType.mapType`, `SchemaRegistry.kt`
+- `TypeFormatTest` — `a map describes the values it holds, not a property named after its key`
+- **Not done**: pattern properties (OpenAPI 3.1).
 
 ### P3: ReadOnly and WriteOnly Properties
-**Current State**: No property modifiers
-**Missing**:
-- readOnly (e.g., `id`, `createdAt` - returned but not accepted in requests)
-- writeOnly (e.g., `password` - accepted but never returned)
-
-**Expected**: Detect based on mutable properties or annotations
+**Current State**: `SchemaObject` carries the fields, nothing sets them.
+**Expected**: Detect based on annotations (e.g. `readOnly` for `id`/`createdAt`, `writeOnly` for
+`password`).
 
 ---
 
 ## 3. Request/Response Enhancements
 
-### P1: Multiple Response Codes per Operation
-**Current State**: `responseCodeMap` only maps types to single status codes
-**Expected**: Support multiple responses with different schemas
+> **Done.** The operation DSL (`OperationBuilder`) carries everything below. See the DSL block on
+> every route in `README.md`, and the tests in `OperationMetadataTest` / `TypeFormatTest`.
+
+### P1: Multiple Response Codes per Operation — **done**
+**Delivered**: `response(status, description)`, `responseOf<T>(status, description)`, `default()` and
+`defaultOf<T>()` describe as many codes as an operation answers with, each with its own body.
+The response type of the route is still documented on its own; these add to it.
 ```kotlin
-route.post<Unit, CreateUserRequest>("/users") {
-    responses {
-        success(201, User::class)
-        error(400, ValidationError::class)
-        error(409, ConflictError::class)
-        error(500, InternalError::class)
-    }
-}
+route.post<User, CreateUserRequest>("/users", {
+    responseOf<ValidationError>(HttpStatusCode.BadRequest, "invalid body")
+    responseOf<ConflictError>(HttpStatusCode.Conflict, "user already exists")
+    defaultOf<InternalError>("unexpected error")
+}) { request -> service.create(request) }
 ```
+- `OperationBuilder.kt` (`response`, `responseOf`, `default`, `defaultOf`)
+- `OperationMetadataTest` — `one operation answers with a body of its own per status code`
 
-### P1: Content-Type Support
-**Current State**: Assumes application/json
-**Missing**:
-- No explicit content type handling
-- No support for multiple media types
-- No multipart/form-data support
-
-**Expected**:
+### P1: Content-Type Support — **done**
+**Delivered**: `consumes(...)` / `produces(...)` set the media types of the request body and of the
+responses; either takes several. `MediaType` names the common ones (`JSON`, `FORM`,
+`URL_ENCODED`, `OCTET_STREAM`, `TEXT`), and any other may be given as a string.
 ```kotlin
-route.post<File, MultipartData>("/upload") {
-    consumes("multipart/form-data")
+route.post<ByteArray, UploadForm>("/upload", {
+    consumes(MediaType.FORM)
     produces("image/png", "image/jpeg")
-}
+}) { form -> render(form) }
 ```
+- `OperationBuilder.kt` (`consumes`, `produces`), `Operation.kt` (`MediaType`)
+- `OperationMetadataTest` — `media types of the body and of the responses are the ones stated`
+- **Not done**: per-part `encoding` for `multipart/form-data` (own content type per field). The
+  whole body is described under the `multipart/form-data` key as one object schema.
 
-### P2: Header Parameters
-**Current State**: Infrastructure exists but not exposed in route extensions
-**Location**: `ParameterObject` supports header type
-**Missing**: No DSL for header parameters
-
-**Expected**:
+### P2: Header Parameters — **done**
+**Delivered**: `header<T>(name, required, description)` on the operation DSL.
 ```kotlin
-route.get<User>("/users/me") {
-    headerParam<String>("Authorization", required = true, description = "Bearer token")
-    headerParam<String>("X-Request-ID", required = false)
-}
+route.get<User>("/users/me", {
+    header<String>("Authorization", required = true, description = "Bearer token")
+    header<String>("X-Request-ID")
+}) { service.me() }
 ```
+- `OperationBuilder.kt` (`header`)
+- `OperationMetadataTest` — `headers and cookies are described as parameters`
 
-### P3: Cookie Parameters
-**Current State**: Not supported
-**Expected**: Cookie parameter definitions similar to headers
+### P3: Cookie Parameters — **done**
+**Delivered**: `cookie<T>(name, required, description)`, the same shape as `header`.
+- `OperationBuilder.kt` (`cookie`); same test as headers.
 
-### P3: File Upload/Download Support
-**Current State**: No binary content handling
-**Expected**:
-- Binary schema type
-- File upload documentation
-- Content-Type handling for files
+### P3: File Upload/Download Support — **done**
+**Delivered**: `ByteArray` is described as `{ type: string, format: binary }`, so a binary body or
+response is documented as a file. Combined with `consumes`/`produces` it covers upload and download.
+- `OpenApiKType.kt` (`kotlin.ByteArray` → `Format.BINARY`), `README.md` type table
+- `TypeFormatTest` — a `ByteArray` property is described as a binary string
 
 ---
 
 ## 4. Documentation & Developer Experience
 
+### P1: Required vs Optional from the Serializer — **done**
+**Delivered**: when a type is `@Serializable`, its serializer is the source of truth: properties
+are described under their `@SerialName`, `@Transient` and computed getters are left out, a
+property with a default is optional, and a custom serializer (`@Serializable(with = ...)`) is
+described by what it writes rather than by the fields of the class. `required` is written per
+object schema.
+- `OpenApiKType.kt` (`declaredProperties`, `serializedAsPrimitive`), `SchemaRegistry.kt` (`required`)
+- `SerializedShapeTest`, `LateInitPropertyTest`
+
 ### P1: Default Values Documentation
-**Current State**: Default values not captured
-**Expected**: Show default values from Kotlin property defaults in schema
+**Current State**: A property with a default is marked optional (see above), but the default
+*value* itself is not written into the schema — `SchemaObject` has no `default` field.
+**Expected**: Show default values from Kotlin property defaults in schema.
 
 ### P1: Field Deprecation Support
-**Current State**: No way to mark fields as deprecated
+**Current State**: `deprecated` works on operations and hand-declared parameters, not on object
+properties.
 **Expected**:
 ```kotlin
 data class User(
@@ -297,69 +253,52 @@ data class User(
 // Should set deprecated: true on username field
 ```
 
-### P2: External Documentation Links
-**Current State**: `ExternalDocumentationObject` exists but not used
-**Expected**:
-```kotlin
-install(OpenAPI) {
-    externalDocs("https://docs.example.com", "Full API Documentation")
-}
+### P2: External Documentation Links — **done**
+**Delivered**: `externalDocs(url, description)` on the document, on every operation, and on a tag.
+- `OpenAPI.kt` (`externalDocs`, `tag`), `OperationBuilder.kt` (`externalDocs`)
+- `DocumentMetadataTest` — `the document describes itself`
 
-route.get<User>("/users") {
-    externalDocs("https://docs.example.com/users", "User Management Guide")
+### P2: Server Configuration — **done**
+**Delivered**: `server(url, description, variables)` describes the servers in full; until the
+first call the document lists the server derived from `host`, with `http://` in front of a local
+address and `https://` in front of everything else. `info { }` describes title, version,
+description and the rest.
+```kotlin
+configure = { api ->
+    api.info { title = "Orders"; version = "2.0" }
+    api.server("https://api.example.com", "Production")
+    api.server("https://staging.example.com", "Staging")
 }
 ```
-
-### P2: Server Configuration
-**Current State**: `ServerObject` exists but not auto-populated
-**Expected**: Auto-detect from Ktor server configuration
-```kotlin
-install(OpenAPI) {
-    servers {
-        server("https://api.example.com", "Production")
-        server("https://staging.example.com", "Staging")
-        server("http://localhost:8080", "Development")
-    }
-}
-```
+- `OpenAPI.kt` (`server`, `host`, `info`, `asServerUrl`)
+- `DocumentMetadataTest` — host/server tests
+- **Not done**: auto-detection from the Ktor connector configuration.
 
 ### P2: Better Error Messages
-**Current State**: Generic reflection errors
-**Expected**: Clear validation and error messages when:
-- Types cannot be reflected
-- Duplicate operationIds detected
-- Invalid path parameter names
-- Missing required configuration
+**Current State**: `UnhandledTypeException` names the type it could not describe; everything else
+is still a bare reflection error.
+**Expected**: Clear messages when types cannot be reflected, duplicate operationIds are declared,
+or path parameter names do not match the template.
 
-### P3: IDE Integration Hints
-**Expected**: KDoc comments with examples on route extension functions
+### P3: IDE Integration Hints — **partly done**
+**Current State**: the operation DSL (`OperationBuilder`) and the core carry KDoc with examples;
+the route extension functions (`get`/`post`/…) are still bare.
 
 ---
 
 ## 5. Advanced OpenAPI Features
 
 ### P3: Callbacks
-**Current State**: `CallbackObject` exists but not integrated
-**Use Case**: Document webhooks and async callbacks
-**Expected**:
-```kotlin
-route.post<Subscription, CreateSubscription>("/subscriptions") {
-    callback("onEvent", "{$request.body#/callbackUrl}") {
-        post<Event>("/") {
-            // webhook schema
-        }
-    }
-}
-```
+**Current State**: `CallbackObject` exists in the spec model but is not integrated.
+**Use Case**: Document webhooks and async callbacks.
 
 ### P3: Links
-**Current State**: `LinkObject` exists but not integrated
-**Use Case**: HATEOAS and operation chaining
-**Expected**: Link responses to related operations
+**Current State**: `LinkObject` exists in the spec model but is not integrated.
+**Use Case**: HATEOAS and operation chaining.
 
 ### P3: Webhook Support (OpenAPI 3.1)
-**Current State**: Not supported
-**Note**: OpenAPI 3.1+ feature, but commonly requested
+**Current State**: Not supported.
+**Note**: OpenAPI 3.1+ feature, but commonly requested.
 
 ---
 
@@ -377,7 +316,8 @@ install(OpenAPI) {
 ```
 
 ### P2: Custom Type Resolvers
-**Current State**: `customTypeDescription` is a simple map
+**Current State**: `customTypeDescription` is a simple `Map<KType, Type>`; a match is exact,
+nullability included.
 **Expected**: Plugin-based type resolver system
 ```kotlin
 install(OpenAPI) {
@@ -391,64 +331,58 @@ install(OpenAPI) {
 ```
 
 ### P2: Schema Customization Hooks
-**Expected**: Modify generated schemas before finalization
-```kotlin
-install(OpenAPI) {
-    schemaTransformer { schema, kType ->
-        schema.copy(
-            description = kType.annotations.find<ApiDoc>()?.value,
-            example = kType.annotations.find<Example>()?.value
-        )
-    }
-}
-```
+**Expected**: Modify generated schemas before finalization (description/example from annotations,
+and the like).
 
 ### P3: OpenAPI Extension Support (x-*)
 **Expected**: Allow custom vendor extensions
 ```kotlin
-route.get<User>("/users") {
+route.get<User>("/users", {
     extension("x-rate-limit", mapOf("limit" to 100, "window" to "1m"))
-}
+}) { ... }
 ```
 
 ---
 
 ## 7. Testing & Validation
 
-### P1: OpenAPI Spec Validation
-**Current State**: Tests use swagger-parser for validation
-**Expected**: Built-in validation with helpful error messages
+### P1: OpenAPI Spec Validation — **partly done**
+**Current State**: every test validates the generated document with `swagger-parser` and asserts
+on the parsed model. No built-in validation at runtime.
+**Remaining**: validation with helpful messages as part of the library itself, for consumers.
 
 ### P2: Contract Testing Support
-**Expected**: Generate test fixtures from OpenAPI spec
+**Expected**: Generate test fixtures from OpenAPI spec.
 
 ### P3: Mock Server Generation
-**Expected**: Auto-generate mock responses from examples
+**Expected**: Auto-generate mock responses from examples.
 
 ---
 
 ## 8. Code Quality & Maintenance
 
-### P1: Comprehensive Documentation
-**Missing**:
-- User guide with examples
-- Migration guides
-- API reference
-- Common use cases
+### P1: Comprehensive Documentation — **partly done**
+**Current State**: `README.md` documents installation, the DSL on every route shape, the security
+and document configuration, and the full type table (formats included). No separate user guide,
+migration guide or API reference site.
 
 ### P2: Performance Optimization
-**Considerations**:
-- Cache reflected type information
-- Lazy schema generation
-- Minimize allocations in hot paths
+**Current State**: the schema registry builds each component once per document, but reflection
+still runs per registration, and the plugin serializes the whole document on every request to
+`/openapi.json`.
+**Remaining**:
+- Cache the serialized document once routing is done
+- Cache reflected type information across registrations
 
-### P2: Better Test Coverage
-**Current State**: Basic tests exist
-**Expected**:
-- Test all HTTP methods
-- Test complex nested types
-- Test edge cases (nullable, generics, sealed classes)
-- Integration tests with real Ktor apps
+### P2: Better Test Coverage — **done**
+**Delivered**: 91 tests across 15 files — every HTTP method (`HttpMethodTest`), nested and
+recursive types (`SchemaComponentTest`), generics (`TopLevelTypeTest`, `DescriptionBuilderTest`),
+sealed hierarchies (`SealedTypeTest`), serializer shapes (`SerializedShapeTest`,
+`LateInitPropertyTest`), formats (`TypeFormatTest`), path templates (`PathTemplateTest`,
+`PathParameterTest`), repeated registration (`RepeatedRegistrationTest`), unknown types
+(`UnknownTypeTest`), empty documents (`EmptyDocumentTest`), document metadata
+(`DocumentMetadataTest`), operation metadata (`OperationMetadataTest`). All run through
+`testApplication` and validate the document with `swagger-parser`.
 
 ---
 
@@ -478,43 +412,40 @@ route.get<User>("/users") {
 
 ## 10. Quick Wins (Low Effort, High Impact)
 
-1. **Add PUT to Method enum** - 1 line change
-2. **Add response descriptions** - Simple DSL addition
-3. **Add operationId support** - Basic string field
-4. **Default status code descriptions** - Map of common codes
-5. **Better default response code** - Use actual HTTP status from context
-6. **Format field for UUID/Date types** - Extend Type.String
-7. **Expose header parameters** - Already have infrastructure
-8. **Server object auto-population** - Read from Ktor config
-9. **External docs support** - Simple property addition
-10. **Deprecated field support** - Check @Deprecated annotation
+1. ~~**Add PUT to Method enum**~~ — done, along with HEAD, OPTIONS and TRACE
+2. ~~**Add response descriptions**~~ — done (`response(status, description)`)
+3. ~~**Add operationId support**~~ — done
+4. ~~**Default status code descriptions**~~ — done (`REASON_PHRASES`)
+5. ~~**Better default response code**~~ — done via the responses DSL (`responseOf`, `default`)
+6. ~~**Format field for UUID/Date types**~~ — done (`Format`, `BUILT_IN_FORMATS`)
+7. ~~**Expose header parameters**~~ — done (`header<T>`, `cookie<T>`)
+8. ~~**Server object auto-population**~~ — done (`host` → server URL, `server(...)`)
+9. ~~**External docs support**~~ — done (document, operation and tag level)
+10. **Deprecated field support** — still open: check `@Deprecated` on object properties
 
 ---
 
 ## Implementation Priority Recommendations
 
-### Phase 1: Core Fixes (1-2 weeks)
-- Operation metadata (operationId, summary, description)
-- Response descriptions
-- Multiple response codes support
+Phases 1–3 of the original plan (operation metadata, responses, security, tags, formats,
+polymorphism, headers, content types) are complete. What remains, roughly in order of value:
 
-### Phase 2: Security & Documentation (2-3 weeks)
-- Security schemes integration
-- Tags and categorization
-- Better error messages
-- Basic validation constraints
+### Next: Consumer-facing polish
+- Examples DSL (request/response/parameter examples)
+- Field-level deprecation and default values in schemas
+- Validation constraints (minLength, minimum, pattern, …)
+- readOnly/writeOnly properties
 
-### Phase 3: Advanced Types (3-4 weeks)
-- Format specifiers
-- Polymorphism support
-- Header parameters
-- Content-Type support
+### Then: Extensibility
+- Custom type resolvers and schema customization hooks
+- Vendor extensions (`x-*`)
+- Global response headers
+- Per-part `multipart/form-data` encoding
 
-### Phase 4: Polish & Extensions (2-3 weeks)
-- Examples support
-- External documentation
-- Server configuration
-- Custom extensions
+### Later: Advanced spec features and performance
+- Callbacks, links, webhooks (3.1)
+- Cache the serialized document; cache reflection across registrations
+- Built-in spec validation with helpful messages
 
 ---
 
