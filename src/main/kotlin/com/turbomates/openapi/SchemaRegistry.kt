@@ -58,7 +58,7 @@ internal class SchemaRegistry {
             )
             is Type.Object -> when {
                 this.returnType != null && customTypes.containsKey(this.returnType) ->
-                    customTypes.getValue(this.returnType).toSchemaObject()
+                    customSchemaObject(this.returnType, this.isNullable, customTypes.getValue(this.returnType))
                 // A type known by reflection is described once in `components` and referenced from
                 // everywhere it is used; one made up on the spot has nothing to be keyed by, so it
                 // stays where it is.
@@ -121,6 +121,26 @@ internal class SchemaRegistry {
     }
 
     /**
+     * Schema of a type described by hand through `customTypeDescription`.
+     *
+     * A description that is an object of its own belongs in `components` like any other object, and
+     * is referenced from where the type is used. It used to be written out at every use site
+     * instead, so a type a hundred properties carry — `Money`, say — repeated its whole
+     * description, examples and enums included, a hundred times over.
+     *
+     * Anything else stays where it is: a reference to a string is longer than the string.
+     */
+    private fun customSchemaObject(type: KType, nullable: Boolean, custom: Type): SchemaObject {
+        return when {
+            custom is Type.Object ->
+                componentSchemaObject(type, nullable) { custom.objectSchemaObject(nullable = false) }
+
+            custom is Type.OneOf -> componentSchemaObject(type, nullable) { custom.oneOfSchemaObject() }
+            else -> custom.toSchemaObject()
+        }
+    }
+
+    /**
      * Registers [schema] in `components.schemas` under the name of [type] and returns a reference
      * to it.
      *
@@ -170,9 +190,20 @@ internal class SchemaRegistry {
     }
 
     private fun KType.componentBaseName(): String {
-        val arguments = arguments.mapNotNull { it.type?.jvmErasure?.simpleName }.joinToString("")
+        return typeName().ifEmpty { DEFAULT_COMPONENT_NAME }
+    }
+
+    /**
+     * The name of a type together with the names of its arguments, as deep as they go.
+     *
+     * Only the first level of arguments used to be read, so every `Data<List<…>>` arrived at the
+     * same `DataList` whatever the list held, and the counter above was left to tell them apart:
+     * a document naming its schemas `DataList2` through `DataList61` says nothing a reader can
+     * recognize. A star projection carries no type and adds nothing to the name.
+     */
+    private fun KType.typeName(): String {
+        val arguments = arguments.mapNotNull { it.type?.typeName() }.joinToString("")
         return FORBIDDEN_IN_COMPONENT_NAME.replace(jvmErasure.simpleName.orEmpty() + arguments, "")
-            .ifEmpty { DEFAULT_COMPONENT_NAME }
     }
 
     private companion object {

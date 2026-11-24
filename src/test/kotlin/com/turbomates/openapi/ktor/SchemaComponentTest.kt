@@ -106,6 +106,29 @@ class SchemaComponentTest {
     }
 
     @Test
+    fun `a generic type is named after everything it is parameterized with`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<Wrapper<List<Accounts.User>>>("/accounts") { Wrapper(emptyList()) }
+            get<Wrapper<List<Billing.Invoice>>>("/billing") { Wrapper(emptyList()) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        val document = response.document()
+        // Only the outermost argument used to be read, so both arrived at `WrapperList` and the
+        // counter was left to tell them apart — `WrapperList` and `WrapperList2` name nothing a
+        // reader can recognize.
+        assertEquals(
+            setOf("WrapperListUser", "User", "WrapperListInvoice", "Invoice"),
+            document.schemas().keys
+        )
+        assertEquals(reference("WrapperListUser"), document.responseSchema("/accounts"))
+        assertEquals(reference("WrapperListInvoice"), document.responseSchema("/billing"))
+    }
+
+    @Test
     fun `a model added by hand keeps its name and is referenced by it`() {
         val api = SwaggerOpenAPI("localhost")
 
@@ -133,6 +156,9 @@ class SchemaComponentTest {
     data class Node(val name: String, val children: List<Node>, val parent: Node?)
 
     @Serializable
+    data class Wrapper<T : Any>(val data: T)
+
+    @Serializable
     data class MutualA(val b: MutualB)
 
     @Serializable
@@ -146,5 +172,8 @@ class SchemaComponentTest {
     object Billing {
         @Serializable
         data class User(val invoices: Int)
+
+        @Serializable
+        data class Invoice(val total: Int)
     }
 }

@@ -219,10 +219,17 @@ class OpenApiKType(private val original: KType) {
      * body without it — leaving it out of the schema would document a request the server rejects.
      * Marking it `@Transient` is what says a property is filled in later, and the serializer
      * reports that on its own.
+     *
+     * A serializer written by hand is only followed as far as it describes anything. One built on
+     * `buildClassSerialDescriptor("Name")` alone — the usual shape of a serializer that encodes a
+     * tree it puts together itself — reports a class of no elements, which is not a type without
+     * properties but a type whose properties were never declared to `kotlinx`. Taking it at its
+     * word described a whole family of responses as `{"type":"object","properties":{}}`, so such a
+     * descriptor is passed over for reflection, the same as a type with no serializer at all.
      */
     private fun KType.declaredProperties(): List<Property> {
         val properties = jvmErasure.memberProperties
-        val descriptor = serialDescriptor()?.takeIf { it.kind is StructureKind }
+        val descriptor = serialDescriptor()?.takeIf { it.kind is StructureKind && it.elementsCount > 0 }
             ?: return properties.filterNot { it.isLateinit }.map { property ->
                 Property(property.name, buildType(property.returnType))
             }

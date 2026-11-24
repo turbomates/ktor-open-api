@@ -39,10 +39,12 @@ internal fun JsonObject.operation(path: String, method: String = "get"): JsonObj
     return getValue("paths").jsonObject.getValue(path).jsonObject.getValue(method).jsonObject
 }
 
+internal fun JsonObject.responses(path: String, method: String = "get"): Map<String, JsonObject> {
+    return operation(path, method).getValue("responses").jsonObject.mapValues { it.value.jsonObject }
+}
+
 internal fun JsonObject.responseSchema(path: String, method: String = "get", code: String = "200"): JsonObject {
-    return operation(path, method).getValue("responses").jsonObject
-        .getValue(code).jsonObject
-        .mediaTypeSchema()
+    return responses(path, method).getValue(code).mediaTypeSchema()
 }
 
 internal fun JsonObject.requestSchema(path: String, method: String = "post"): JsonObject {
