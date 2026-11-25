@@ -385,6 +385,15 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
         nullable: kotlin.Boolean
     ) : Type(nullable)
 
+    /**
+     * A value that is every one of [types] at once.
+     *
+     * This is how a type is described as something already described plus a little more, without
+     * copying the description: a subclass of a `sealed` hierarchy written through its parent is the
+     * subclass itself and the discriminator property the parent is read by.
+     */
+    class AllOf(val types: List<Type>, nullable: kotlin.Boolean) : Type(nullable)
+
     /** A value nothing is known about — an unresolved type parameter or a star projection. */
     class Any(nullable: kotlin.Boolean = true) : Type(nullable)
 }

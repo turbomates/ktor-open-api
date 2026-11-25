@@ -39,14 +39,14 @@ class SealedTypeTest {
         val document = response.document()
         assertEquals(reference("Shape"), document.responseSchema("/shape"))
         assertEquals(
-            listOf(reference("Circle"), reference("Square")),
-            document.schema("Shape").oneOf().sortedBy { it.toString() }
+            listOf("#/components/schemas/Circle", "#/components/schemas/Square"),
+            document.schema("Shape").oneOf().mapNotNull { it.referenced() }.sorted()
         )
-        assertEquals(setOf("type", "radius"), document.properties("Circle").keys)
+        assertEquals(setOf("radius"), document.properties("Circle").keys)
     }
 
     @Test
-    fun `a subclass carries the value the discriminator holds for it`() = testApplication {
+    fun `an option carries the value the discriminator holds for the subclass`() = testApplication {
         install(OpenAPI)
         routing {
             get<Shape>("/shape") { Shape.Circle(1.0) }
@@ -55,13 +55,13 @@ class SealedTypeTest {
         val response = client.get("/openapi.json").bodyAsText()
 
         assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
-        // The serializer writes `{"type":"circle","radius":1.0}`, and a body without the key is
-        // refused, so the key is described and required like any other.
-        val document = response.document()
-        val discriminator = document.property("Circle", "type")
-        assertEquals("string", discriminator.type())
-        assertEquals(listOf("circle"), discriminator.enum())
-        assertEquals(listOf("type", "radius"), document.required("Circle"))
+        // Through the parent the serializer writes `{"type":"circle","radius":1.0}` and refuses a
+        // body without the key, so the option is the subclass and that key, required like any
+        // other. The value is the only one this subclass ever carries.
+        val carried = response.document().option("Shape", "Circle").carried()
+        assertEquals(listOf("type"), carried.required())
+        assertEquals("string", carried.property("type").type())
+        assertEquals(listOf("circle"), carried.property("type").enum())
     }
 
     @Test
@@ -73,8 +73,39 @@ class SealedTypeTest {
 
         val response = client.get("/openapi.json").bodyAsText()
 
-        val written = Json.encodeToJsonElement<Shape>(Shape.Circle(1.0)).jsonObject
-        assertEquals(written.keys, response.document().properties("Circle").keys)
+        val document = response.document()
+        // Handed the subclass, the serializer writes `{"radius":1.0}`, and that is the schema of
+        // the subclass.
+        val direct = Json.encodeToJsonElement(Shape.Circle(1.0)).jsonObject
+        assertEquals(direct.keys, document.properties("Circle").keys)
+        // Through the parent it writes the discriminator as well, and the option adds exactly the
+        // key the subclass itself is written without.
+        val polymorphic = Json.encodeToJsonElement<Shape>(Shape.Circle(1.0)).jsonObject
+        assertEquals(
+            polymorphic.keys - direct.keys,
+            document.option("Shape", "Circle").carried().getValue("properties").jsonObject.keys
+        )
+    }
+
+    @Test
+    fun `a subclass an endpoint names is described as the serializer writes it alone`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<Shape>("/shape") { Shape.Circle(1.0) }
+            post<Shape.Circle, Shape.Circle>("/circle") { it }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        // The discriminator used to be described on the subclass, so a body built from this schema
+        // carried a `type` — and the very server that published the schema refused it, since a
+        // reader handed `Circle` knows no such key. There is one schema for the subclass whichever
+        // way it is used, and the key belongs to the option of the parent.
+        val document = response.document()
+        assertEquals(setOf("radius"), document.properties("Circle").keys)
+        assertEquals(reference("Circle"), document.requestSchema("/circle"))
+        assertEquals(listOf("type"), document.option("Shape", "Circle").carried().required())
     }
 
     @Test
@@ -89,7 +120,7 @@ class SealedTypeTest {
         assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
         val document = response.document()
         assertEquals("kind", document.schema("Event").discriminator().propertyName())
-        assertEquals(listOf("created"), document.property("Created", "kind").enum())
+        assertEquals(listOf("created"), document.option("Event", "Created").carried().property("kind").enum())
     }
 
     @Test
@@ -106,8 +137,8 @@ class SealedTypeTest {
         // so it is not one of the options.
         val document = response.document()
         assertEquals(
-            listOf(reference("Delete"), reference("Insert"), reference("Read")),
-            document.schema("Command").oneOf().sortedBy { it.toString() }
+            listOf("#/components/schemas/Delete", "#/components/schemas/Insert", "#/components/schemas/Read"),
+            document.schema("Command").oneOf().mapNotNull { it.referenced() }.sorted()
         )
         assertEquals(setOf("insert", "delete", "read"), document.schema("Command").discriminator().mapping().keys)
     }
@@ -126,7 +157,10 @@ class SealedTypeTest {
         // all the same, so the name comes from `@SerialName` rather than from a descriptor.
         val document = response.document()
         assertEquals(setOf("success", "failure"), document.schema("OutcomeString").discriminator().mapping().keys)
-        assertEquals(listOf("success"), document.property("Success", "type").enum())
+        assertEquals(
+            listOf("success"),
+            document.option("OutcomeString", "Success").carried().property("type").enum()
+        )
     }
 
     @Test
@@ -141,10 +175,10 @@ class SealedTypeTest {
         assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
         val document = response.document()
         assertEquals(
-            listOf(reference("Card"), reference("Cash")),
-            document.schema("Payment").oneOf().sortedBy { it.toString() }
+            listOf("#/components/schemas/Card", "#/components/schemas/Cash"),
+            document.schema("Payment").oneOf().mapNotNull { it.referenced() }.sorted()
         )
-        assertEquals(listOf("card"), document.property("Card", "type").enum())
+        assertEquals(listOf("card"), document.option("Payment", "Card").carried().property("type").enum())
     }
 
     @Test
@@ -205,6 +239,26 @@ class SealedTypeTest {
     }
 
     private fun JsonObject.oneOf(): List<JsonObject> = getValue("oneOf").jsonArray.map { it.jsonObject }
+
+    /** The option of the `oneOf` of [schema] that stands for the subclass described as [component]. */
+    private fun JsonObject.option(schema: String, component: String): JsonObject {
+        return schema(schema).oneOf().single { it.referenced() == "#/components/schemas/$component" }
+    }
+
+    /** The schema an option is a reference to, whether it stands alone or is one of an `allOf`. */
+    private fun JsonObject.referenced(): String? {
+        return get("\$ref")?.jsonPrimitive?.content
+            ?: get("allOf")?.jsonArray?.firstNotNullOfOrNull { it.jsonObject["\$ref"]?.jsonPrimitive?.content }
+    }
+
+    /** What an option adds to the subclass it stands for: the discriminator the parent is read by. */
+    private fun JsonObject.carried(): JsonObject = getValue("allOf").jsonArray.last().jsonObject
+
+    private fun JsonObject.property(name: String): JsonObject {
+        return getValue("properties").jsonObject.getValue(name).jsonObject
+    }
+
+    private fun JsonObject.required(): List<String> = getValue("required").jsonArray.map { it.jsonPrimitive.content }
 
     private fun JsonObject.enum(): List<String> = getValue("enum").jsonArray.map { it.jsonPrimitive.content }
 

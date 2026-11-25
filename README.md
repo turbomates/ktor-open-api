@@ -383,8 +383,14 @@ described as a required property, because that is what the endpoint accepts.
 
 A `sealed` class or interface is described as `oneOf` its subclasses. The discriminator is the
 property `kotlinx.serialization` writes the type into — `type`, or whatever
-`@JsonClassDiscriminator` names — and each subclass carries the value the serializer writes for it,
-so a body built from the schema is one `call.receive()` accepts.
+`@JsonClassDiscriminator` names — and each option is the subclass together with the value the
+serializer writes there, so a body built from the schema is one `call.receive()` accepts.
+
+The key belongs to the option rather than to the subclass, because that is where the serializer
+writes it: `Json.encodeToString<Animal>(dog)` writes `{"type":"dog","breed":"…"}`, while
+`Json.encodeToString(dog)` writes `{"breed":"…"}` and a reader handed `Animal.Dog` refuses a body
+that carries `type` at all. So the schema of the subclass stays the one it is written with wherever
+it is used — including an endpoint that names it directly — and the option demands the key.
 
 ```kotlin
 @Serializable
@@ -403,8 +409,26 @@ sealed class Animal {
 {
   "Animal": {
     "oneOf": [
-      { "$ref": "#/components/schemas/Dog" },
-      { "$ref": "#/components/schemas/Cat" }
+      {
+        "allOf": [
+          { "$ref": "#/components/schemas/Dog" },
+          {
+            "type": "object",
+            "properties": { "type": { "type": "string", "enum": ["dog"] } },
+            "required": ["type"]
+          }
+        ]
+      },
+      {
+        "allOf": [
+          { "$ref": "#/components/schemas/Cat" },
+          {
+            "type": "object",
+            "properties": { "type": { "type": "string", "enum": ["cat"] } },
+            "required": ["type"]
+          }
+        ]
+      }
     ],
     "discriminator": {
       "propertyName": "type",
@@ -417,10 +441,9 @@ sealed class Animal {
   "Dog": {
     "type": "object",
     "properties": {
-      "type": { "type": "string", "enum": ["dog"] },
       "breed": { "type": "string" }
     },
-    "required": ["type", "breed"]
+    "required": ["breed"]
   }
 }
 ```

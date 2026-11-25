@@ -73,6 +73,7 @@ internal class SchemaRegistry {
                 nullable = this.isNullable
             )
 
+            is Type.AllOf -> SchemaObject(allOf = this.types.map { it.toSchemaObject() })
             is Type.Ref -> referenceSchemaObject(componentName(this.returnType), this.isNullable)
             is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
             is Type.Number -> SchemaObject(type = "number", format = this.format, nullable = this.isNullable)
@@ -106,10 +107,21 @@ internal class SchemaRegistry {
             discriminator = discriminator?.let { property ->
                 DiscriminatorObject(
                     property,
-                    optionSchemas.mapNotNull { (value, schema) -> schema.`$ref`?.let { value to it } }.toMap()
+                    optionSchemas.mapNotNull { (value, schema) -> schema.referenced()?.let { value to it } }.toMap()
                 )
             }
         )
+    }
+
+    /**
+     * The schema this one is a reference to, whether it is the reference itself or an `allOf` that
+     * holds one.
+     *
+     * An option of a `oneOf` is the subclass and the discriminator the parent is read by, so the
+     * mapping has to look inside the `allOf` for the schema the value stands for.
+     */
+    private fun SchemaObject.referenced(): String? {
+        return `$ref` ?: allOf?.firstNotNullOfOrNull { it.`$ref` }
     }
 
     /**

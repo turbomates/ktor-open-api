@@ -108,6 +108,25 @@ class SerializedShapeTest {
     }
 
     @Test
+    fun `a class the serializer writes as empty is described as empty`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<Hidden>("/hidden") { Hidden() }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        // A generated serializer declares no elements for this class, and `{}` is exactly what it
+        // writes: a `@Transient` property and a computed getter are no more part of the JSON than
+        // they are of the descriptor. Reflection would put both back and call `hidden` required.
+        assertEquals(0, serializer(typeOf<Hidden>()).descriptor.elementsCount)
+        val document = response.document()
+        assertEquals(emptySet(), document.properties("Hidden").keys)
+        assertEquals(emptyList(), document.required("Hidden"))
+    }
+
+    @Test
     fun `an object with no required property says nothing about required`() = testApplication {
         install(OpenAPI)
         routing {
@@ -137,6 +156,12 @@ class SerializedShapeTest {
 
     @Serializable
     data class AllOptional(val page: Int = 1)
+
+    /** A `@Serializable` class the serializer writes as `{}`, having nothing to write. */
+    @Serializable
+    data class Hidden(@Transient val hidden: String = "hidden") {
+        val computed: String get() = "computed"
+    }
 
     data class Reflected(val name: String) {
         val nick: String? = null
