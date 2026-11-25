@@ -21,9 +21,10 @@ Automatically generate OpenAPI 3.0 documentation for your Ktor application based
   - Nested objects
 - **Path, Query, and Body Parameters**: Automatically extracts parameter definitions from route signatures
 - **Operation Metadata**: Summary, description, `operationId`, tags, headers, cookies, media types and per-code responses through a DSL block on every route
+- **Response Headers**: Described once for the whole document, or per operation and per status code
 - **Security Schemes**: Bearer, basic, API key, OAuth2 and OpenID Connect, required globally or per operation
 - **Swagger UI Integration**: Built-in Swagger UI for interactive API documentation
-- **Custom Type Mapping**: Configure custom OpenAPI types for specific Kotlin types
+- **Custom Type Mapping**: Describe a type outright, or by a resolver that answers for a whole family of them
 
 ## Installation
 
@@ -172,6 +173,8 @@ get<UserResponse, UserPath>("/users/{id}", {
     responseOf<ErrorResponse>(HttpStatusCode.NotFound, "no user with that id")
     defaultOf<ErrorResponse>("unexpected failure")
 
+    responseHeaders { header<Int>("X-Total-Count", "How many users there are in all") }
+
     consumes(MediaType.JSON)
     produces(MediaType.JSON, "text/csv")
 
@@ -186,9 +189,36 @@ get<UserResponse, UserPath>("/users/{id}", {
 - `default` and `defaultOf<T>` describe every code not listed.
 - A response without a description of its own is described by what its status code means — `200` is
   `OK`, `404` is `Not Found`.
+- `responseHeaders` describes the headers every response of the operation carries; a single status
+  code states its own by taking a block: `response(HttpStatusCode.Created, "the order") { header("Location", Type.String()) }`.
 - `noSecurity()` opts an operation out of the security the document requires globally.
 
 The block is available on every verb, and every part of it is optional.
+
+### Response Headers
+
+Headers most operations answer with are described once, when the plugin is installed:
+
+```kotlin
+install(OpenAPI) {
+    globalResponseHeaders {
+        header("X-Request-Id", Type.String(), "Request correlation id", required = true)
+        header<Int>("X-Rate-Limit-Remaining", "Calls left in the current window")
+    }
+}
+```
+
+Every response of every operation carries them afterwards — the `404` and the `default` as much as
+the `200`. `header` takes either an OpenAPI type (`Type.String()`, `Type.Number()`) or the Kotlin
+type of the value, whichever reads better.
+
+A header is identified by its name, and HTTP header names are case-insensitive, so describing
+`x-request-id` on an operation replaces the global `X-Request-Id` instead of adding a second header
+beside it. The one closer to the response wins: a header of a single status code over one of the
+operation, and one of the operation over one of the document.
+
+Global headers reach the operations registered after the plugin is installed, which is the usual
+order — `install(OpenAPI)` first, `routing { }` after it.
 
 ### Configuration
 
@@ -220,6 +250,20 @@ install(OpenAPI) {
     customTypeDescription = mapOf(
         typeOf<MyCustomType>() to Type.String(format = "custom-format", nullable = false)
     )
+
+    // Rules for the types the API names for itself
+    typeResolver { kType ->
+        when (kType.classifier) {
+            Money::class -> Type.String(format = "money", nullable = kType.isMarkedNullable)
+            else -> null
+        }
+    }
+
+    // Headers every response of every operation carries
+    globalResponseHeaders {
+        header("X-Request-Id", Type.String(), "Request correlation id")
+        header<Int>("X-Rate-Limit-Remaining", "Calls left in the current window")
+    }
 
     // Everything the document says about itself
     configure = { openAPI ->
@@ -257,6 +301,36 @@ install(OpenAPI) {
 `documentationBuilder = SwaggerOpenAPI("api.example.com")` is the server of the document until
 `server` is called: a bare host is given a scheme (`http` for a local address, `https` otherwise),
 and a value that already is a URL is kept as it is.
+
+### Describing Types Yourself
+
+Reflection reads a type as it is written, which is not always how the API writes it. A resolver says
+what a type is, and reflection describes everything the resolvers say nothing about:
+
+```kotlin
+install(OpenAPI) {
+    typeResolver { kType ->
+        when (kType.classifier) {
+            Money::class -> Type.String(format = "money", nullable = kType.isMarkedNullable)
+            Period::class -> Type.String(format = "period", nullable = kType.isMarkedNullable)
+            else -> null
+        }
+    }
+}
+```
+
+- A type meets the resolvers **wherever it turns up** — a response, a request body, a property nested
+  deep inside one, an element of a list, the value of a map, a header or a parameter of the operation
+  block. It is described the same way in all of them, and a type described this way leaves no schema
+  of its own behind in `components`.
+- Resolvers are asked in the order they were declared, and the first one to answer wins. Returning
+  `null` passes the type on to the next one.
+- The resolver is handed the type **with its nullability**, so `nullable = kType.isMarkedNullable`
+  follows the use site while a fixed `nullable` overrides it. The description is used exactly as it
+  is given.
+- `customTypeDescription` is the same mechanism for a single type named outright, and those are
+  asked before any resolver. A type named there is described that way whether it is used as `Money`
+  or as `Money?`.
 
 ### Type System
 

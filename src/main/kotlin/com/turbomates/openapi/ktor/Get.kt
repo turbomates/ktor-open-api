@@ -27,7 +27,7 @@ inline fun <reified TResponse : Any> Route.get(
         route.buildFullPath(),
         HttpMethod.Get,
         response = typeOf<TResponse>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -46,7 +46,7 @@ inline fun <reified TResponse : Any> Route.get(
         route.buildFullPath(),
         HttpMethod.Get,
         response = typeOf<TResponse>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -74,7 +74,7 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.get(
         response = typeOf<TResponse>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
         queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -105,7 +105,7 @@ inline fun <reified TResponse : Any, reified TQuery : Any, reified TPath : Any> 
         response = typeOf<TResponse>(),
         pathParams = typeOf<TPath>(),
         queryParams = typeOf<TQuery>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }

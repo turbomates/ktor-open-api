@@ -14,8 +14,6 @@ import kotlin.reflect.jvm.jvmErasure
  * time and a type that refers to itself can be described at all.
  */
 internal class SchemaRegistry {
-    private val customTypes: MutableMap<KType, Type> = mutableMapOf()
-
     /** Component name every described type is registered under, keyed by the type itself. */
     private val componentNames: MutableMap<KType, String> = mutableMapOf()
     private val components: MutableMap<String, SchemaObject> = mutableMapOf()
@@ -23,10 +21,6 @@ internal class SchemaRegistry {
     /** The schemas built so far, ready to be published as `components.schemas`. */
     val schemas: Map<String, SchemaObject>
         get() = components.toMap()
-
-    fun setCustomClassType(kType: KType, type: Type) {
-        customTypes[kType] = type
-    }
 
     /**
      * Describes [model] in `components.schemas` under [name].
@@ -56,17 +50,15 @@ internal class SchemaRegistry {
                 enum = this.values,
                 nullable = this.isNullable
             )
-            is Type.Object -> when {
-                this.returnType != null && customTypes.containsKey(this.returnType) ->
-                    customSchemaObject(this.returnType, this.isNullable, customTypes.getValue(this.returnType))
-                // A type known by reflection is described once in `components` and referenced from
-                // everywhere it is used; one made up on the spot has nothing to be keyed by, so it
-                // stays where it is.
-                this.returnType != null ->
+            // A type described at all is described once in `components` and referenced from
+            // everywhere it is used, whether reflection read it or a rule described it; one made up
+            // on the spot has no type to be keyed by, so it stays where it is.
+            is Type.Object ->
+                if (this.returnType != null) {
                     componentSchemaObject(this.returnType, this.isNullable) { objectSchemaObject(nullable = false) }
-
-                else -> objectSchemaObject(nullable = this.isNullable)
-            }
+                } else {
+                    objectSchemaObject(nullable = this.isNullable)
+                }
 
             is Type.OneOf ->
                 if (this.returnType != null) {
@@ -118,26 +110,6 @@ internal class SchemaRegistry {
                 )
             }
         )
-    }
-
-    /**
-     * Schema of a type described by hand through `customTypeDescription`.
-     *
-     * A description that is an object of its own belongs in `components` like any other object, and
-     * is referenced from where the type is used. It used to be written out at every use site
-     * instead, so a type a hundred properties carry — `Money`, say — repeated its whole
-     * description, examples and enums included, a hundred times over.
-     *
-     * Anything else stays where it is: a reference to a string is longer than the string.
-     */
-    private fun customSchemaObject(type: KType, nullable: Boolean, custom: Type): SchemaObject {
-        return when {
-            custom is Type.Object ->
-                componentSchemaObject(type, nullable) { custom.objectSchemaObject(nullable = false) }
-
-            custom is Type.OneOf -> componentSchemaObject(type, nullable) { custom.oneOfSchemaObject() }
-            else -> custom.toSchemaObject()
-        }
     }
 
     /**

@@ -3,7 +3,7 @@
 package com.turbomates.openapi.ktor
 
 import com.turbomates.openapi.OperationDescription
-import com.turbomates.openapi.openApiKType
+import com.turbomates.openapi.TypeResolvers
 import io.ktor.http.HttpMethod
 import io.ktor.server.application.plugin
 import io.ktor.server.routing.OpenApiRoutePathFormat
@@ -23,7 +23,7 @@ fun OpenAPI.addToPath(
     body: KType? = null,
     pathParams: KType? = null,
     queryParams: KType? = null,
-    operation: OperationDescription = OperationDescription()
+    operation: OperationBuilder.() -> Unit = {}
 ) {
     extendDocumentation { responseMap ->
         val documentedMethod = method.documentedMethod()
@@ -35,24 +35,30 @@ fun OpenAPI.addToPath(
                 // enum or a value class are as legitimate at the top level as an object is. The
                 // parameters of an operation are the one place that does need an object: they are
                 // taken apart property by property.
-                response.run { responseMap(this).mapValues { it.value.openApiKType.type() } },
-                body?.openApiKType?.type(),
-                pathParams?.openApiKType?.objectType(),
-                queryParams?.openApiKType?.objectType(),
-                operation
+                //
+                // The document describes them rather than reflection alone, so that a type its
+                // resolvers know about is documented the way they say wherever it turns up.
+                response.run { responseMap(this).mapValues { describe(it.value) } },
+                body?.let { describe(it) },
+                pathParams?.let { describeObject(it) },
+                queryParams?.let { describeObject(it) },
+                describeOperation(operation, resolvers)
             )
         }
     }
 }
 
 /**
- * Reads an operation description off the DSL block a route was declared with.
+ * Reads an operation description off the DSL block a route was declared with, describing the types
+ * in it through [resolvers].
  *
- * Called from the `inline` route builders, so it has to be public; there is nothing to call it for
- * by hand.
+ * Called from the route builders, so it has to be public; there is nothing to call it for by hand.
  */
-fun describeOperation(block: OperationBuilder.() -> Unit): OperationDescription {
-    return OperationBuilder().apply(block).build()
+fun describeOperation(
+    block: OperationBuilder.() -> Unit,
+    resolvers: TypeResolvers = TypeResolvers()
+): OperationDescription {
+    return OperationBuilder().apply(block).build(resolvers)
 }
 
 /**

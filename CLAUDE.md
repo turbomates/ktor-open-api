@@ -90,7 +90,7 @@ inline fun <reified TResponse : Any, reified TRequest : Any> Route.post(
 
 **Type Merging**: Routes defined multiple times (e.g., via different overloads) have their specifications merged, combining responses, parameters, and request bodies.
 
-**Custom Type Mapping**: The plugin configuration allows mapping specific KTypes to custom OpenAPI type definitions via `customTypeDescription` map.
+**Custom Type Mapping**: `TypeResolver`s describe the types the API names for itself. They are consulted in `OpenApiKType.buildType`, before reflection, so a type is described the same way wherever it turns up — as a body, a response, a nested property, a collection element. `customTypeDescription` is the same mechanism for a single named type, registered ahead of the resolvers.
 
 ### Configuration
 
@@ -101,6 +101,8 @@ install(OpenAPI) {
     path = "/openapi.json"  // default endpoint
     responseCodeMap = { mapOf(HttpStatusCode.OK.value to this) }
     customTypeDescription = mapOf(/* KType to Type mappings */)
+    typeResolver { kType -> /* Type, or null to leave the type to reflection */ }
+    globalResponseHeaders { header("X-Request-Id", Type.String()) }
     configure = { swaggerOpenAPI ->
         // Additional configuration
     }

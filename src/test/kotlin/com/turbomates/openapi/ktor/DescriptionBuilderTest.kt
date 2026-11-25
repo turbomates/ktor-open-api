@@ -38,11 +38,14 @@ class DescriptionBuilderTest {
             }
         }
 
-        val response = client.get("/openapi.json").bodyAsText()
+        val response = client.get("/openapi.json")
+        val body = response.bodyAsText()
 
-        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
-        val document = response.document()
-        // One `error` string, rather than the status and the body the class happens to carry.
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(emptyList(), OpenAPIParser().readContents(body, null, null).messages)
+        // The type is described the way it was named rather than the way reflection reads it: the
+        // `error` of the description, and not the status and the body the class happens to carry.
+        val document = body.document()
         assertEquals(listOf("error"), document.properties("TestResponse").keys.toList())
         assertEquals(
             buildJsonObject { put("error", "Wrong response") },
@@ -97,10 +100,12 @@ class DescriptionBuilderTest {
             }
         }
 
-        val response = client.get("/openapi.json").bodyAsText()
+        val response = client.get("/openapi.json")
+        val body = response.bodyAsText()
 
-        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
-        val document = response.document()
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(emptyList(), OpenAPIParser().readContents(body, null, null).messages)
+        val document = body.document()
         assertEquals(setOf("400"), document.responses("/test", "post").keys)
         assertEquals(reference("TestTemplateClassAny"), document.responseSchema("/test", "post", "400"))
     }

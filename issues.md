@@ -304,32 +304,6 @@ the route extension functions (`get`/`post`/…) are still bare.
 
 ## 6. Configuration & Customization
 
-### P1: Global Response Headers
-**Expected**: Define headers returned by all/most operations
-```kotlin
-install(OpenAPI) {
-    globalResponseHeaders {
-        header("X-Request-ID", Type.String(), "Request correlation ID")
-        header("X-Rate-Limit-Remaining", Type.Number(), "API rate limit remaining")
-    }
-}
-```
-
-### P2: Custom Type Resolvers
-**Current State**: `customTypeDescription` is a simple `Map<KType, Type>`; a match is exact,
-nullability included.
-**Expected**: Plugin-based type resolver system
-```kotlin
-install(OpenAPI) {
-    typeResolver { kType ->
-        when {
-            kType.classifier == MyCustomType::class -> Type.String(format = "custom")
-            else -> null
-        }
-    }
-}
-```
-
 ### P2: Schema Customization Hooks
 **Expected**: Modify generated schemas before finalization (description/example from annotations,
 and the like).

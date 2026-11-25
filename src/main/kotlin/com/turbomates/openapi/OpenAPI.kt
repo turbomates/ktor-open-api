@@ -19,6 +19,9 @@ import kotlin.reflect.KType
 
 class OpenAPI(host: String) {
     val root: Root = Root("3.0.2", InfoObject("Api", version = "0.1.0"))
+
+    /** The resolvers every type of this document is described through — see [typeResolver]. */
+    val resolvers: TypeResolvers = TypeResolvers()
     private val schemas = SchemaRegistry()
     private val operations = OperationFactory(schemas)
     private val securitySchemes: MutableMap<String, SecuritySchemeObject> = mutableMapOf()
@@ -101,8 +104,66 @@ class OpenAPI(host: String) {
         publishComponents()
     }
 
+    /**
+     * Describes [kType] the way this document does — through its resolvers first, and through
+     * reflection for everything they say nothing about.
+     */
+    fun describe(kType: KType): Type = kType.openApiKType(resolvers).type()
+
+    /**
+     * Describes [kType] as an object, which is what the parameters of an operation have to be.
+     *
+     * Throws [InvalidTypeForOpenApiType] when the description is anything else — including when a
+     * resolver made it so.
+     */
+    fun describeObject(kType: KType): Type.Object = kType.openApiKType(resolvers).objectType()
+
+    /**
+     * Describes the types this API names for itself, before reflection gets to read them.
+     *
+     * ```
+     * openApi.typeResolver { kType ->
+     *     when (kType.classifier) {
+     *         Money::class -> Type.String(format = "money", nullable = kType.isMarkedNullable)
+     *         else -> null
+     *     }
+     * }
+     * ```
+     *
+     * Resolvers are asked in the order they were added, and the first one to answer wins. A type
+     * meets them wherever it turns up — as a body, as a response, as a property nested inside one,
+     * as an element of a collection — so a type is described the same way throughout the document.
+     */
+    fun typeResolver(resolver: TypeResolver) {
+        resolvers.add(resolver)
+    }
+
+    /** Describes [kType] as [type], whichever nullability it is used with. A resolver of one type. */
     fun setCustomClassType(kType: KType, type: Type) {
-        schemas.setCustomClassType(kType, type)
+        resolvers.add(kType, type)
+    }
+
+    /**
+     * Headers every response of every operation carries.
+     *
+     * ```
+     * openApi.globalResponseHeaders {
+     *     header("X-Request-Id", Type.String(), "Request correlation id")
+     *     header<Int>("X-Rate-Limit-Remaining", "Calls left in the current window")
+     * }
+     * ```
+     *
+     * An operation of its own, or a single response of it, may describe a header of the same name
+     * differently, and the one closer to the response wins. The headers reach the operations
+     * described from here on, so they are best stated before the routes are registered — which is
+     * what configuring the plugin at installation does.
+     */
+    fun globalResponseHeaders(block: ResponseHeadersBuilder.() -> Unit) {
+        globalResponseHeaders(ResponseHeadersBuilder(resolvers).apply(block).build())
+    }
+
+    fun globalResponseHeaders(headers: List<ResponseHeader>) {
+        operations.globalResponseHeaders = mergeResponseHeaders(operations.globalResponseHeaders, headers)
     }
 
     /** Describes the document itself — `openApi.info { title = "Orders"; version = "2.0" }`. */
@@ -296,11 +357,11 @@ sealed class Type(val isNullable: kotlin.Boolean = true) {
         nullable: kotlin.Boolean
     ) : Type(nullable)
 
-    class Boolean(nullable: kotlin.Boolean) : Type(nullable)
-    class Number(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
+    class Boolean(nullable: kotlin.Boolean = true) : Type(nullable)
+    class Number(nullable: kotlin.Boolean = true, val format: kotlin.String? = null) : Type(nullable)
 
     /** A whole number, which OpenAPI keeps apart from `number`. */
-    class Integer(nullable: kotlin.Boolean, val format: kotlin.String? = null) : Type(nullable)
+    class Integer(nullable: kotlin.Boolean = true, val format: kotlin.String? = null) : Type(nullable)
 
     /**
      * An object of keys that are not known in advance, each holding a [valueType].

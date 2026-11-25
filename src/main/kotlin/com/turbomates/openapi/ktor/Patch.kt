@@ -28,7 +28,7 @@ inline fun <reified TResponse : Any> Route.patch(
         route.buildFullPath(),
         HttpMethod.Patch,
         response = typeOf<TResponse>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -47,7 +47,7 @@ inline fun <reified TResponse : Any> Route.patch(
         route.buildFullPath(),
         HttpMethod.Patch,
         response = typeOf<TResponse>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -67,7 +67,7 @@ inline fun <reified TResponse : Any, reified TBody : Any> Route.patch(
         HttpMethod.Patch,
         response = typeOf<TResponse>(),
         body = typeOf<TBody>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -94,7 +94,7 @@ inline fun <reified TResponse : Any, reified TParams : Any> Route.emptyPatch(
         response = typeOf<TResponse>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
         queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -122,7 +122,7 @@ inline fun <reified TResponse : Any, reified TBody : Any, reified TParams : Any>
         body = typeOf<TBody>(),
         pathParams = if (route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
         queryParams = if (!route.buildFullPath().containsPathParameters()) typeOf<TParams>() else null,
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
@@ -160,7 +160,7 @@ inline fun <reified TResponse : Any, reified TBody : Any, reified TQuery : Any, 
         body = typeOf<TBody>(),
         queryParams = typeOf<TQuery>(),
         pathParams = typeOf<TPath>(),
-        operation = describeOperation(operation)
+        operation = operation
     )
     return route
 }
