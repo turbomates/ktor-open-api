@@ -50,9 +50,9 @@ internal class SchemaRegistry {
                 enum = this.values,
                 nullable = this.isNullable
             )
-            // A type known by reflection is described once in `components` and referenced from
-            // everywhere it is used; one made up on the spot — by a resolver, or by hand — has
-            // nothing to be keyed by, so it stays where it is.
+            // A type described at all is described once in `components` and referenced from
+            // everywhere it is used, whether reflection read it or a rule described it; one made up
+            // on the spot has no type to be keyed by, so it stays where it is.
             is Type.Object ->
                 if (this.returnType != null) {
                     componentSchemaObject(this.returnType, this.isNullable) { objectSchemaObject(nullable = false) }
@@ -73,6 +73,7 @@ internal class SchemaRegistry {
                 nullable = this.isNullable
             )
 
+            is Type.AllOf -> SchemaObject(allOf = this.types.map { it.toSchemaObject() })
             is Type.Ref -> referenceSchemaObject(componentName(this.returnType), this.isNullable)
             is Type.Boolean -> SchemaObject(type = "boolean", nullable = this.isNullable)
             is Type.Number -> SchemaObject(type = "number", format = this.format, nullable = this.isNullable)
@@ -106,10 +107,21 @@ internal class SchemaRegistry {
             discriminator = discriminator?.let { property ->
                 DiscriminatorObject(
                     property,
-                    optionSchemas.mapNotNull { (value, schema) -> schema.`$ref`?.let { value to it } }.toMap()
+                    optionSchemas.mapNotNull { (value, schema) -> schema.referenced()?.let { value to it } }.toMap()
                 )
             }
         )
+    }
+
+    /**
+     * The schema this one is a reference to, whether it is the reference itself or an `allOf` that
+     * holds one.
+     *
+     * An option of a `oneOf` is the subclass and the discriminator the parent is read by, so the
+     * mapping has to look inside the `allOf` for the schema the value stands for.
+     */
+    private fun SchemaObject.referenced(): String? {
+        return `$ref` ?: allOf?.firstNotNullOfOrNull { it.`$ref` }
     }
 
     /**
@@ -162,9 +174,20 @@ internal class SchemaRegistry {
     }
 
     private fun KType.componentBaseName(): String {
-        val arguments = arguments.mapNotNull { it.type?.jvmErasure?.simpleName }.joinToString("")
+        return typeName().ifEmpty { DEFAULT_COMPONENT_NAME }
+    }
+
+    /**
+     * The name of a type together with the names of its arguments, as deep as they go.
+     *
+     * Only the first level of arguments used to be read, so every `Data<List<…>>` arrived at the
+     * same `DataList` whatever the list held, and the counter above was left to tell them apart:
+     * a document naming its schemas `DataList2` through `DataList61` says nothing a reader can
+     * recognize. A star projection carries no type and adds nothing to the name.
+     */
+    private fun KType.typeName(): String {
+        val arguments = arguments.mapNotNull { it.type?.typeName() }.joinToString("")
         return FORBIDDEN_IN_COMPONENT_NAME.replace(jvmErasure.simpleName.orEmpty() + arguments, "")
-            .ifEmpty { DEFAULT_COMPONENT_NAME }
     }
 
     private companion object {

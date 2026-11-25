@@ -32,7 +32,7 @@ Add the dependency to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.turbomates:ktor-openapi:VERSION")
+    implementation("com.turbomates:ktor-open-api:VERSION")
 }
 ```
 
@@ -354,7 +354,7 @@ The library automatically converts Kotlin types to OpenAPI schemas:
 | Map | object | `additionalProperties` |
 | Enum | string | enum values |
 | Value Class | (unwrapped type) | - |
-| Sealed class | `oneOf` + `discriminator` | - |
+| Sealed class, sealed interface | `oneOf` + `discriminator` | - |
 
 Types are described in `components.schemas` and referenced with `$ref`, so a type shared by several
 endpoints is written once. `@SerialName`, `@Transient`, property order and default values are taken
@@ -378,6 +378,83 @@ data class RegisterUser(val email: String) {
 there is to go by. In a `@Serializable` type a `lateinit var` is an element of the serializer like
 any other — `call.receive()` fails with `MissingFieldException` when the key is missing — so it is
 described as a required property, because that is what the endpoint accepts.
+
+#### Polymorphic types
+
+A `sealed` class or interface is described as `oneOf` its subclasses. The discriminator is the
+property `kotlinx.serialization` writes the type into — `type`, or whatever
+`@JsonClassDiscriminator` names — and each option is the subclass together with the value the
+serializer writes there, so a body built from the schema is one `call.receive()` accepts.
+
+The key belongs to the option rather than to the subclass, because that is where the serializer
+writes it: `Json.encodeToString<Animal>(dog)` writes `{"type":"dog","breed":"…"}`, while
+`Json.encodeToString(dog)` writes `{"breed":"…"}` and a reader handed `Animal.Dog` refuses a body
+that carries `type` at all. So the schema of the subclass stays the one it is written with wherever
+it is used — including an endpoint that names it directly — and the option demands the key.
+
+```kotlin
+@Serializable
+sealed class Animal {
+    @Serializable
+    @SerialName("dog")
+    data class Dog(val breed: String) : Animal()
+
+    @Serializable
+    @SerialName("cat")
+    data class Cat(val indoor: Boolean) : Animal()
+}
+```
+
+```json
+{
+  "Animal": {
+    "oneOf": [
+      {
+        "allOf": [
+          { "$ref": "#/components/schemas/Dog" },
+          {
+            "type": "object",
+            "properties": { "type": { "type": "string", "enum": ["dog"] } },
+            "required": ["type"]
+          }
+        ]
+      },
+      {
+        "allOf": [
+          { "$ref": "#/components/schemas/Cat" },
+          {
+            "type": "object",
+            "properties": { "type": { "type": "string", "enum": ["cat"] } },
+            "required": ["type"]
+          }
+        ]
+      }
+    ],
+    "discriminator": {
+      "propertyName": "type",
+      "mapping": {
+        "dog": "#/components/schemas/Dog",
+        "cat": "#/components/schemas/Cat"
+      }
+    }
+  },
+  "Dog": {
+    "type": "object",
+    "properties": {
+      "breed": { "type": "string" }
+    },
+    "required": ["breed"]
+  }
+}
+```
+
+The options are the subclasses a value can actually be: a hierarchy that goes deeper than one level
+is listed by its leaves, since an intermediate `sealed` class is abstract and no body is ever written
+under its serial name. A subclass without `@SerialName` is mapped by its qualified name, which is
+what `kotlinx` writes.
+
+A hierarchy that is not `@Serializable` is described by reflection, as `oneOf` its subclasses with no
+discriminator: nothing says how they are told apart in JSON, so nothing is claimed about it.
 
 #### Complex Types
 

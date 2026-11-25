@@ -9,6 +9,7 @@ import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
 import kotlin.reflect.KTypeParameter
+import kotlin.reflect.full.allSuperclasses
 import kotlin.reflect.full.createType
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubtypeOf
@@ -20,10 +21,13 @@ import kotlin.reflect.jvm.jvmErasure
 import kotlin.reflect.typeOf
 import kotlin.time.Duration
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.serializerOrNull
 
 class OpenApiKType(private val original: KType, private val resolvers: TypeResolvers = TypeResolvers()) {
@@ -150,7 +154,7 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
         val key = type.withNullability(false)
         building.add(key)
         try {
-            return Type.Object(name, type.objectProperties(), returnType = type, nullable = type.isMarkedNullable)
+            return Type.Object(name, type.declaredProperties(), returnType = type, nullable = type.isMarkedNullable)
         } finally {
             building.remove(key)
         }
@@ -175,10 +179,13 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
      * body without it — leaving it out of the schema would document a request the server rejects.
      * Marking it `@Transient` is what says a property is filled in later, and the serializer
      * reports that on its own.
+     *
+     * A serializer written by hand is only followed as far as it describes anything — see
+     * [describesShape].
      */
-    private fun KType.objectProperties(): List<Property> {
+    private fun KType.declaredProperties(): List<Property> {
         val properties = jvmErasure.memberProperties
-        val descriptor = serialDescriptor()?.takeIf { it.kind is StructureKind }
+        val descriptor = serialDescriptor()?.takeIf { it.describesShape(jvmErasure) }
             ?: return properties.filterNot { it.isLateinit }.map { property ->
                 Property(property.name, buildType(property.returnType))
             }
@@ -220,6 +227,38 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
         }
     }
 
+    /**
+     * Whether this descriptor says anything about the shape of [klass].
+     *
+     * A serializer `kotlinx` generated always does, even when it declares nothing: a class of no
+     * elements is a class written as `{}`, with its `@Transient` properties and computed getters
+     * left out of the JSON as surely as out of the descriptor.
+     *
+     * One written by hand may say nothing at all. A serializer that encodes a tree it puts together
+     * itself is usually declared as `buildClassSerialDescriptor("Name")` and no more, which is not
+     * a type without properties but a type whose properties were never declared to `kotlinx`.
+     * Taking it at its word described a whole family of responses as
+     * `{"type":"object","properties":{}}`, so such a descriptor is passed over for reflection, the
+     * same as a type with no serializer at all.
+     */
+    private fun SerialDescriptor.describesShape(klass: KClass<*>): Boolean {
+        if (kind !is StructureKind) {
+            return false
+        }
+        return elementsCount > 0 || klass.hasGeneratedSerializer()
+    }
+
+    /**
+     * Whether the serializer of this class is the one `kotlinx` generated for it.
+     *
+     * `@Serializable` names no serializer of its own, and that is what tells a generated descriptor
+     * from one written by hand — the class is the only place a serializer can be named for every
+     * use of the type at once.
+     */
+    private fun KClass<*>.hasGeneratedSerializer(): Boolean {
+        return findAnnotation<Serializable>()?.with == KSerializer::class
+    }
+
     /** Descriptor of the serializer of this type, or `null` when the type has none. */
     private fun KType.serialDescriptor(): SerialDescriptor? {
         return runCatching { serializerOrNull(this) }.getOrNull()?.descriptor
@@ -238,7 +277,7 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
         }
         // What the API says about a type comes before what reflection can read off it, wherever the
         // type turns up — as a body, as a response, as a property of either.
-        resolvers.resolve(resolved)?.let { return it }
+        resolvers.resolve(resolved)?.let { return it.describing(resolved) }
         val builtIn = resolved.builtInType()
         return when {
             builtIn != null -> builtIn
@@ -249,6 +288,24 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
             resolved.isValue() -> resolved.valueType()
             resolved.isSealed() -> resolved.oneOfType(name)
             else -> objectOrReference(name ?: resolved.objectName(), resolved)
+        }
+    }
+
+    /**
+     * A description told which type it describes, so that it is written to `components` once and
+     * referenced from everywhere that type is used.
+     *
+     * A rule describes a shape and names no type, and a shape with no type to be keyed by was
+     * copied into every use site: a type a hundred properties carry — `Money`, say — repeated its
+     * whole description, examples and enums included, a hundred times over. Only an object is worth
+     * a component of its own; a string or a number stays where it is, since a reference to a string
+     * is longer than the string. A description that names a type of its own keeps it.
+     */
+    private fun Type.describing(type: KType): Type {
+        return when {
+            this is Type.Object -> Type.Object(name, properties, example, returnType ?: type, isNullable)
+            this is Type.OneOf -> Type.OneOf(options, discriminator, returnType ?: type, isNullable)
+            else -> this
         }
     }
 
@@ -264,7 +321,7 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
      * described without one: what tells its subclasses apart is not ours to guess.
      */
     private fun KType.oneOfType(name: String?): Type {
-        val subclasses = jvmErasure.sealedSubclasses.takeIf { it.isNotEmpty() }
+        val subclasses = jvmErasure.sealedLeaves().takeIf { it.isNotEmpty() }
             ?: return objectOrReference(name ?: objectName(), this)
         val key = withNullability(false)
         if (building.contains(key)) {
@@ -272,21 +329,103 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
         }
         building.add(key)
         try {
-            val isSerializable = serialDescriptor() != null
+            val discriminator = jvmErasure.classDiscriminator().takeIf { jvmErasure.isSerializable() }
             val options = subclasses.associate { subclass ->
                 val subtype = subclass.starProjectedType
-                val serialName = subtype.serialDescriptor()?.serialName ?: subclass.qualifiedName.orEmpty()
-                serialName to buildType(subtype)
+                val serialName = subtype.serialName()
+                serialName to buildType(subtype).toldApartBy(discriminator, serialName)
             }
             return Type.OneOf(
                 options,
-                discriminator = CLASS_DISCRIMINATOR.takeIf { isSerializable },
+                discriminator = discriminator,
                 returnType = this,
                 nullable = isMarkedNullable
             )
         } finally {
             building.remove(key)
         }
+    }
+
+    /**
+     * The subclass as it is written through its parent: what its own serializer writes, and the
+     * property `kotlinx` adds in front of that.
+     *
+     * The discriminator belongs to this use of the subclass and not to the subclass itself.
+     * `Json.encodeToString(Circle(1.0))` writes `{"radius":1.0}`, and a reader handed the subclass
+     * refuses a body carrying `type`, since the key is unknown to it — described on the subclass,
+     * the discriminator made the schema of a type an endpoint names directly describe a request
+     * that very server rejects. Written here, the subclass keeps the one schema it is written with
+     * everywhere, and the option of the `oneOf` demands the key the parent is read by.
+     *
+     * A subclass that declares the key itself needs nothing added: it is a property of the class
+     * like any other, and the serializer writes no second one.
+     */
+    private fun Type.toldApartBy(property: String?, value: String): Type {
+        if (property == null || this is Type.Object && properties.any { it.name == property }) {
+            return this
+        }
+        if (this !is Type.Object && this !is Type.Ref) {
+            return this
+        }
+        val carried = Property(property, Type.String(listOf(value), nullable = false), isRequired = true)
+        return Type.AllOf(
+            listOf(this, Type.Object(property, listOf(carried), nullable = false)),
+            nullable = isNullable
+        )
+    }
+
+    /**
+     * The subclasses a value of a `sealed` type can actually be.
+     *
+     * A hierarchy may go deeper than one level, and an intermediate `sealed` class is abstract like
+     * the root: nothing is ever an instance of it. `kotlinx` writes the serial name of the leaf,
+     * so listing an intermediate among the options would offer a schema under a discriminator value
+     * that never appears in a body.
+     *
+     * Interfaces make the hierarchy a graph rather than a tree — a leaf reachable through two
+     * `sealed` interfaces is still one option.
+     */
+    private fun KClass<*>.sealedLeaves(): List<KClass<*>> {
+        return sealedSubclasses.flatMap { subclass ->
+            if (subclass.isSealed) subclass.sealedLeaves() else listOf(subclass)
+        }.distinct()
+    }
+
+    /**
+     * The property a polymorphic value of this hierarchy carries its type in.
+     *
+     * `type` unless `@JsonClassDiscriminator` says otherwise; the annotation is looked for on the
+     * whole hierarchy, since it is written on the root and inherited by everything under it.
+     */
+    private fun KClass<*>.classDiscriminator(): String {
+        return (listOf(this) + allSuperclasses)
+            .firstNotNullOfOrNull { it.findAnnotation<JsonClassDiscriminator>()?.discriminator }
+            ?: CLASS_DISCRIMINATOR
+    }
+
+    /**
+     * The name the serializer knows this type by, which is what a discriminator carries.
+     *
+     * Nullability is dropped first: a nullable serializer reports a name of its own (`Circle?`), and
+     * nothing is ever written under it. Where no serializer can be had — a generic type left as a
+     * star projection — the name is put together the way `kotlinx` would: `@SerialName` if there is
+     * one, and the qualified name of the class otherwise.
+     */
+    private fun KType.serialName(): String {
+        val type = withNullability(false)
+        return type.serialDescriptor()?.serialName
+            ?: type.jvmErasure.findAnnotation<SerialName>()?.value
+            ?: type.jvmErasure.qualifiedName.orEmpty()
+    }
+
+    /**
+     * Whether values of this class are written by `kotlinx.serialization`.
+     *
+     * The annotation is asked rather than the serializer, since a generic `sealed` class has no
+     * serializer until its arguments are known, and it is polymorphic all the same.
+     */
+    private fun KClass<*>.isSerializable(): Boolean {
+        return findAnnotation<Serializable>() != null
     }
 
     /** The schema of an object already being described is a reference to it, not another copy. */
@@ -392,7 +531,10 @@ class OpenApiKType(private val original: KType, private val resolvers: TypeResol
         const val JAVA_TIME_PACKAGE = "java.time."
         const val ANY_CLASS = "kotlin.Any"
 
-        /** The property `kotlinx.serialization` writes the type of a polymorphic value into. */
+        /**
+         * The property `kotlinx.serialization` writes the type of a polymorphic value into, unless
+         * `@JsonClassDiscriminator` names another one.
+         */
         const val CLASS_DISCRIMINATOR = "type"
 
         /**

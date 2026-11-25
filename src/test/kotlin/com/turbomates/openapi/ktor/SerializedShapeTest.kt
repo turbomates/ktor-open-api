@@ -4,11 +4,18 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.server.testing.testApplication
 import io.swagger.parser.OpenAPIParser
+import kotlin.reflect.typeOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.serializer
 
 /**
  * The schema describes what the serializer writes (C6), and says which keys have to be there at
@@ -82,6 +89,44 @@ class SerializedShapeTest {
     }
 
     @Test
+    fun `a serializer that describes no elements leaves the type to reflection`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<Envelope<Dto>>("/envelope") { Envelope(Dto("1", kept = "k")) }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        // The envelope does have a serializer; what it has not is anything to say about its shape.
+        assertEquals(0, serializer(typeOf<Envelope<Dto>>()).descriptor.elementsCount)
+        // Taken at its word, it used to describe every envelope as an object of no properties at
+        // all. Reflection knows the property, and the type behind `T` comes from the use site.
+        val document = response.document()
+        assertEquals(listOf("data"), document.properties("EnvelopeDto").keys.toList())
+        assertEquals(reference("Dto"), document.property("EnvelopeDto", "data"))
+    }
+
+    @Test
+    fun `a class the serializer writes as empty is described as empty`() = testApplication {
+        install(OpenAPI)
+        routing {
+            get<Hidden>("/hidden") { Hidden() }
+        }
+
+        val response = client.get("/openapi.json").bodyAsText()
+
+        assertEquals(emptyList(), OpenAPIParser().readContents(response, null, null).messages)
+        // A generated serializer declares no elements for this class, and `{}` is exactly what it
+        // writes: a `@Transient` property and a computed getter are no more part of the JSON than
+        // they are of the descriptor. Reflection would put both back and call `hidden` required.
+        assertEquals(0, serializer(typeOf<Hidden>()).descriptor.elementsCount)
+        val document = response.document()
+        assertEquals(emptySet(), document.properties("Hidden").keys)
+        assertEquals(emptyList(), document.required("Hidden"))
+    }
+
+    @Test
     fun `an object with no required property says nothing about required`() = testApplication {
         install(OpenAPI)
         routing {
@@ -112,9 +157,33 @@ class SerializedShapeTest {
     @Serializable
     data class AllOptional(val page: Int = 1)
 
+    /** A `@Serializable` class the serializer writes as `{}`, having nothing to write. */
+    @Serializable
+    data class Hidden(@Transient val hidden: String = "hidden") {
+        val computed: String get() = "computed"
+    }
+
     data class Reflected(val name: String) {
         val nick: String? = null
     }
 
     data class PlainParams(val page: Int)
+
+    /** A wrapper written by a serializer of its own, as a response envelope usually is. */
+    @Serializable(with = EnvelopeSerializer::class)
+    data class Envelope<T : Any>(val data: T)
+
+    /**
+     * A serializer that builds the tree it writes itself, and so declares no elements — the shape
+     * of what it writes is in [serialize], where nothing can read it.
+     */
+    object EnvelopeSerializer : KSerializer<Envelope<*>> {
+        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("Envelope")
+
+        override fun serialize(encoder: Encoder, value: Envelope<*>) {
+            encoder.encodeString(value.data.toString())
+        }
+
+        override fun deserialize(decoder: Decoder): Envelope<*> = Envelope(decoder.decodeString())
+    }
 }
